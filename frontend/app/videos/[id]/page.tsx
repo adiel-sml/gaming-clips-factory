@@ -10,7 +10,7 @@ export default function VideoPage() {
   const { id } = useParams<{ id: string }>();
   const video = usePoll<Video>(
     useCallback(() => api.video(id), [id]),
-    useCallback((v?: Video) => !v || ["queued", "analyzing", "imported"].includes(v.status) || v.last_job?.status === "running", []),
+    useCallback((v?: Video) => !v || ["downloading", "queued", "analyzing", "imported"].includes(v.status) || v.last_job?.status === "running", []),
     2500,
   );
   const highlights = usePoll<Highlight[]>(useCallback(() => api.highlights(id), [id]), () => false);
@@ -67,7 +67,7 @@ export default function VideoPage() {
           <div>
             <h1>{v.title ?? v.id}</h1>
             <p className="muted">
-              {fmt(v.duration)} · {v.width}×{v.height} · {v.fps} fps{v.game ? ` · jeu détecté : ${v.game.toUpperCase()}` : ""}
+              {v.duration ? `${fmt(v.duration)} · ${v.width}×${v.height} · ${v.fps} fps` : "en attente du fichier"}{v.game ? ` · jeu détecté : ${v.game.toUpperCase()}` : ""}
               {v.language ? ` · langue : ${v.language}` : ""}
               {v.stats?.analysis_timings?.total ? ` · analysé en ${v.stats.analysis_timings.total}s` : ""}
             </p>
@@ -79,6 +79,9 @@ export default function VideoPage() {
         </div>
       )}
       {v?.status === "failed" && <ErrorBox message={v.error ?? "Échec"} />}
+      {v?.status === "downloading" && (
+        <div className="card"><strong>Téléchargement en cours…</strong> <span className="muted">seul l&apos;extrait demandé est récupéré ; l&apos;analyse démarrera ensuite automatiquement. Vous pouvez fermer cette page.</span></div>
+      )}
       {v && ["queued", "analyzing"].includes(v.status) && (
         <div className="card"><strong>Analyse en cours…</strong> <span className="muted">extraction audio, transcription, détection des moments.</span></div>
       )}

@@ -9,7 +9,7 @@ export default function Dashboard() {
   const stats = usePoll<Stats>(api.stats, () => true, 5000);
   const videos = usePoll<Video[]>(
     api.videos,
-    useCallback((d?: Video[]) => !!d?.some((v) => ["queued", "analyzing"].includes(v.status)), []),
+    useCallback((d?: Video[]) => !!d?.some((v) => ["downloading", "queued", "analyzing"].includes(v.status)), []),
     3000,
   );
   const s = stats.data;

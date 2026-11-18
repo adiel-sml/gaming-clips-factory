@@ -149,8 +149,10 @@ class VideoIngestionService:
         return self._finalize(video, dst), False
 
     # ------------------------------------------------------------------ URL
-    def import_url(self, url: str, rights_confirmed: bool = False, rights_note: str | None = None,
-                   title: str | None = None, options: dict | None = None, start=None, end=None) -> tuple[Video, bool]:
+    def prepare_url(self, url: str, rights_confirmed: bool = False, rights_note: str | None = None,
+                    title: str | None = None, options: dict | None = None, start=None, end=None) -> tuple[Video, bool]:
+        """Étape rapide (quelques secondes) : vérifications + création de la vidéo en « downloading ».
+        Le téléchargement lui-même se fait ensuite avec `download_url` (tâche de fond)."""
         self._check_rights(rights_confirmed)
         host = (urlparse(url).hostname or "").lower()
         allowed = self.s.get("ingestion.allowed_url_domains", []) or []
@@ -167,15 +169,42 @@ class VideoIngestionService:
                 "début/fin, par ex. de 6:00:00 à 7:00:00.")
         candidates = self.db.exec(select(Video).where(Video.source_url == url)).all()
         existing = next((v for v in candidates if self._same_section(v, section)), None)
-        if existing and existing.status != VideoStatus.FAILED and existing.file_path:
+        if existing and existing.status not in (VideoStatus.FAILED,) and (existing.file_path or existing.status == VideoStatus.DOWNLOADING):
             return existing, True
         video = existing or Video(source_type="url", source_url=url, title=title or info.get("title"),
                                   rights_note=rights_note, options=options or {})
         if not existing:
             self._apply_section(video, section)
-        path = self._download(url, self.video_dir(video.id), video, section)
-        video.file_hash = file_fingerprint(path)
-        return self._finalize(video, path), False
+        video.status, video.error = VideoStatus.DOWNLOADING, None
+        video.updated_at = utcnow()
+        self.db.add(video)
+        self.db.commit()
+        self.db.refresh(video)
+        return video, False
+
+    def download_url(self, video: Video) -> Video:
+        """Étape longue : télécharge (seulement la plage demandée) puis finalise la vidéo."""
+        o = video.options or {}
+        section = (o.get("section_requested_start", o["section_start"]), o["section_end"]) if "section_start" in o else None
+        try:
+            path = self._download(video.source_url, self.video_dir(video.id), video, section)
+            video.file_hash = file_fingerprint(path)
+            return self._finalize(video, path)
+        except Exception as exc:
+            self.db.rollback()
+            video.status, video.error = VideoStatus.FAILED, str(exc)[:2000]
+            video.updated_at = utcnow()
+            self.db.add(video)
+            self.db.commit()
+            raise
+
+    def import_url(self, url: str, rights_confirmed: bool = False, rights_note: str | None = None,
+                   title: str | None = None, options: dict | None = None, start=None, end=None) -> tuple[Video, bool]:
+        """Import complet bloquant (CLI)."""
+        video, existed = self.prepare_url(url, rights_confirmed, rights_note, title, options, start, end)
+        if existed and video.file_path:
+            return video, True
+        return self.download_url(video), False
 
     def _probe_url(self, url: str) -> dict:
         """Métadonnées (titre, durée) sans rien télécharger."""

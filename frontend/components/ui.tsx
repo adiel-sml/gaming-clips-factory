@@ -16,7 +16,7 @@ export function ScoreBadge({ score }: { score: number }) {
 }
 
 const STATUS_FR: Record<string, string> = {
-  imported: "Importée", queued: "En file", analyzing: "Analyse…", analyzed: "Analysée", failed: "Échec",
+  downloading: "Téléchargement…", imported: "Importée", queued: "En file", analyzing: "Analyse…", analyzed: "Analysée", failed: "Échec",
   pending: "À rendre", rendering: "Rendu…", ready: "Prêt", needs_review: "À vérifier", approved: "Validé",
   rejected: "Rejeté", exported: "Exporté", candidate: "Candidat", generated: "Généré", duplicate: "Doublon",
   running: "En cours", done: "Terminé",

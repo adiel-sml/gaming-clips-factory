@@ -16,6 +16,7 @@ def _json_field(default: Any = None) -> Any:
 
 
 class VideoStatus:
+    DOWNLOADING = "downloading"
     IMPORTED = "imported"
     QUEUED = "queued"
     ANALYZING = "analyzing"

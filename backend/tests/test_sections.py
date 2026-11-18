@@ -116,3 +116,68 @@ def test_youtube_bot_check_gives_clear_message():
     err = _download_error(Exception("ERROR: [youtube] abc: Sign in to confirm you're not a bot. Use --cookies"), "x")
     assert str(err) == BOT_CHECK_MSG and "cookies" not in str(err)
     assert "privée" in str(_download_error(Exception("ERROR: Private video"), "x"))
+
+
+@requires_ffmpeg
+def test_api_url_import_is_async(fresh_db, synthetic_video, monkeypatch, pipeline_factory):
+    """POST /videos avec une URL répond immédiatement ; le worker télécharge puis analyse."""
+    import time
+
+    from fastapi.testclient import TestClient
+
+    from app.api.main import app
+    from app.core.db import get_engine
+    from app.models.entities import Job, Video
+    from app.workers.queue import JobQueue
+
+    monkeypatch.setattr(VideoIngestionService, "_probe_url", lambda self, url: {"duration": 36000, "title": "VOD"})
+
+    def slow_download(self, url, out_dir, video, section=None):
+        assert section == (16200, 19800)
+        dst = out_dir / "source.mp4"
+        shutil.copy(synthetic_video, dst)
+        return dst
+
+    monkeypatch.setattr(VideoIngestionService, "_download", slow_download)
+    app.state.disable_worker = True
+    with TestClient(app) as client:
+        t0 = time.time()
+        r = client.post("/videos", json={"source": "https://www.twitch.tv/videos/123", "rights_confirmed": True,
+                                         "start": "4:30:0", "end": "5:30:0", "auto": "analyze"})
+        assert r.status_code == 201, r.text
+        assert time.time() - t0 < 5
+        body = r.json()
+        assert body["video"]["status"] == "downloading" and body["job"]["type"] == "import"
+        vid = body["video"]["id"]
+        # renvoyer la même demande pendant le téléchargement ne relance rien
+        again = client.post("/videos", json={"source": "https://www.twitch.tv/videos/123", "rights_confirmed": True,
+                                             "start": "4:30:0", "end": "5:30:0"})
+        assert again.json()["already_imported"] and again.json()["video"]["id"] == vid
+
+    assert JobQueue().run_worker(once=True, pipeline_factory=pipeline_factory) >= 1
+    with Session(get_engine()) as db:
+        v = db.get(Video, vid)
+        assert v.status == "analyzed", v.error
+        assert v.file_path and v.duration > 39
+        job = db.get(Job, body["job"]["id"])
+        assert job.status == "done" and job.result["highlights"]
+
+
+def test_async_download_failure_marks_video_failed(fresh_db, monkeypatch):
+    from app.core.db import get_engine
+    from app.models.entities import Job, Video
+    from app.workers.queue import JobQueue
+
+    monkeypatch.setattr(VideoIngestionService, "_probe_url", lambda self, url: {"duration": 600, "title": "VOD"})
+
+    def broken(self, *a, **k):
+        raise IngestionError("YouTube refuse le téléchargement depuis ce serveur")
+
+    monkeypatch.setattr(VideoIngestionService, "_download", broken)
+    with Session(get_engine(), expire_on_commit=False) as db:
+        v, _ = VideoIngestionService(db).prepare_url("https://www.twitch.tv/videos/9", rights_confirmed=True)
+        job = JobQueue().enqueue(db, "import", v.id, {"then": "analyze"})
+    JobQueue().run_worker(once=True)
+    with Session(get_engine()) as db:
+        assert db.get(Video, v.id).status == "failed" and "refuse" in db.get(Video, v.id).error
+        assert db.get(Job, job.id).status == "failed"

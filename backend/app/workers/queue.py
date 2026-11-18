@@ -40,7 +40,7 @@ class JobQueue:
         session.add(job)
         if job_type in ("analyze", "pipeline"):
             video = session.get(Video, target_id)
-            if video and video.status not in (VideoStatus.ANALYZING,):
+            if video and video.status not in (VideoStatus.ANALYZING, VideoStatus.DOWNLOADING):
                 video.status = VideoStatus.QUEUED
                 session.add(video)
         session.commit()
@@ -75,7 +75,20 @@ class JobQueue:
         pipe = (pipeline_factory or (lambda s: PipelineService(s)))(session)
         try:
             p = job.payload or {}
-            if job.type == "analyze":
+            if job.type == "import":
+                from app.services.ingestion import VideoIngestionService
+
+                video = session.get(Video, job.target_id)
+                if video is None:
+                    raise LookupError(f"Vidéo introuvable : {job.target_id}")
+                VideoIngestionService(session).download_url(video)
+                result: dict = {"downloaded": True}
+                then = p.get("then", "none")
+                if then == "analyze":
+                    result["highlights"] = [h.id for h in pipe.analyze(video.id)]
+                elif then == "pipeline":
+                    result.update(pipe.run_full(video.id))
+            elif job.type == "analyze":
                 hls = pipe.analyze(job.target_id, force=p.get("force", False))
                 result = {"highlights": [h.id for h in hls]}
             elif job.type == "generate":

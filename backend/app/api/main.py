@@ -195,8 +195,13 @@ def create_video(body: VideoCreate, db: Session = Depends(get_session)):
     opts = body.options.model_dump(exclude_none=True)
     try:
         if body.source.startswith(("http://", "https://")):
-            video, existed = ing.import_url(body.source, body.rights_confirmed, body.rights_note, body.title, opts,
-                                            start=body.start, end=body.end)
+            # vérifications immédiates ; le téléchargement (parfois long) part en tâche de fond
+            video, existed = ing.prepare_url(body.source, body.rights_confirmed, body.rights_note, body.title, opts,
+                                             start=body.start, end=body.end)
+            if not existed:
+                job = queue().enqueue(db, "import", video.id, {"then": body.auto})
+                return {"video": video_out(video, db), "already_imported": False,
+                        "job": {"id": job.id, "type": job.type, "status": job.status}}
         else:
             video, existed = ing.import_file(body.source, body.title, body.rights_confirmed, body.rights_note, opts,
                                              start=body.start, end=body.end)

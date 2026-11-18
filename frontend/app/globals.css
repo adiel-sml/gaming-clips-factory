@@ -71,7 +71,7 @@ input[type="range"] { padding: 0; accent-color: var(--accent); }
 .pill-ready, .pill-analyzed, .pill-done, .pill-approved, .pill-exported, .pill-generated { color: var(--good); background: rgba(61, 220, 132, 0.12); }
 .pill-needs_review, .pill-queued, .pill-pending { color: var(--warn); background: rgba(255, 176, 32, 0.12); }
 .pill-failed, .pill-rejected { color: var(--bad); background: rgba(255, 92, 92, 0.12); }
-.pill-analyzing, .pill-rendering, .pill-running { color: var(--cool); background: rgba(90, 141, 255, 0.12); }
+.pill-analyzing, .pill-rendering, .pill-running, .pill-downloading { color: var(--cool); background: rgba(90, 141, 255, 0.12); }
 
 .thumb { aspect-ratio: 9 / 16; width: 100%; max-height: 300px; object-fit: cover; border-radius: 10px; background: var(--panel-2); display: grid; place-items: center; color: var(--muted); font-size: 0.85rem; }
 .hl-card { display: flex; flex-direction: column; gap: 10px; }
