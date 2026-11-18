@@ -181,3 +181,16 @@ def test_real_whisper_transcription(tmp_path):
     assert "salut" in text or "stream" in text
     assert all(w.end >= w.start for w in tr.words)
     assert tr.words[0].start < 3
+
+
+def test_api_token_protection(client, monkeypatch):
+    monkeypatch.setenv("GCF_API_TOKEN", "s3cret")
+    assert client.get("/health").status_code == 200            # santé : publique
+    assert client.get("/docs").status_code == 200              # documentation : publique
+    assert client.get("/stats").status_code == 401
+    assert client.get("/stats", headers={"Authorization": "Bearer faux"}).status_code == 401
+    assert client.get("/stats", headers={"Authorization": "Bearer s3cret"}).status_code == 200
+    assert client.get("/stats?token=s3cret").status_code == 200  # balises <video>/<img>
+    assert client.get("/files/inexistant.mp4").status_code == 401
+    pre = client.options("/stats", headers={"Origin": "http://localhost:3000", "Access-Control-Request-Method": "GET"})
+    assert pre.status_code == 200                               # préflight CORS non bloqué

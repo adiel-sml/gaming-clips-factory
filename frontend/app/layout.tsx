@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import TokenGate from "@/components/TokenGate";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -21,7 +22,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <Link href="/clips">Clips</Link>
           </nav>
         </header>
-        <main className="container">{children}</main>
+        <main className="container">
+          <TokenGate>{children}</TokenGate>
+        </main>
       </body>
     </html>
   );

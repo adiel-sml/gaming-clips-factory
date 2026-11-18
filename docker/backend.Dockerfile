@@ -14,4 +14,5 @@ COPY config config
 
 WORKDIR /app/backend
 EXPOSE 8000
-CMD ["python", "-m", "app", "serve", "--host", "0.0.0.0", "--port", "8000"]
+# Railway/Render/Fly fournissent $PORT ; 8000 par défaut
+CMD ["sh", "-c", "python -m app serve --host 0.0.0.0 --port ${PORT:-8000}"]

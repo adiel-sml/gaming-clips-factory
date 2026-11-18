@@ -110,6 +110,8 @@ automatiquement dans l'API, la CLI et l'interface.
 
 | Variable | Rôle |
 |---|---|
+| `GCF_API_TOKEN` | jeton exigé par l'API (en-tête `Authorization: Bearer …` ou `?token=`). **Obligatoire en ligne** ; vide = API ouverte (usage local) |
+| `GCF_CORS_ORIGINS` | sites autorisés à appeler l'API, séparés par des virgules (ex. ton URL Vercel) |
 | `ANTHROPIC_API_KEY` | active le LLM (optionnel) pour affiner le scoring, les hooks, titres et captions. Sans clé : règles uniquement |
 | `DATABASE_URL` | vide = SQLite `data/gcf.db` ; ex. `postgresql+psycopg://user:pass@host/db` (installer `backend[postgres]`) |
 | `GCF_DATA_DIR`, `GCF_OUTPUT_DIR` | dossiers de travail et de sortie (défaut : `./data`, `./output`) |
@@ -302,7 +304,7 @@ le résultat du contrôle qualité et un bloc `performance`, que l'on remplit vi
 
 ```bash
 cd backend
-pytest                    # 48 tests : lexique, scoring, sélection, contexte, dédup, sous-titres,
+pytest                    # 49 tests : lexique, scoring, sélection, contexte, dédup, sous-titres,
                           # 6 cadrages rendus, QC, ingestion, file d'attente, API, LLM simulé, end-to-end,
                           # + vraie transcription faster-whisper (modèle tiny, ignorée si absente)
 pytest -m "not slow"      # sans le test qui télécharge un modèle Whisper
@@ -333,6 +335,8 @@ qualité, les fichiers et les métadonnées.
 | L'UI affiche « API injoignable » | lancer l'API et vérifier `NEXT_PUBLIC_API_URL` et `api.cors_origins` |
 
 ## 14. Architecture
+
+Mise en ligne (frontend sur Vercel, backend sur Railway ou un VPS) : [`docs/DEPLOIEMENT.md`](docs/DEPLOIEMENT.md).
 
 Voir [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) pour les choix techniques et
 [`docs/ROADMAP.md`](docs/ROADMAP.md) pour les phases suivantes.

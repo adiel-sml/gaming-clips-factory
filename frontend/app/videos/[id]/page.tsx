@@ -4,7 +4,7 @@ import { useParams } from "next/navigation";
 import { useCallback, useRef, useState } from "react";
 import { CategoryTag, ErrorBox, ScoreBadge, StatusPill } from "@/components/ui";
 import { usePoll, waitForJob } from "@/hooks/usePoll";
-import { api, API_URL, fileUrl, fmt, Highlight, Video } from "@/lib/api";
+import { api, fileUrl, fmt, Highlight, Video } from "@/lib/api";
 
 export default function VideoPage() {
   const { id } = useParams<{ id: string }>();
@@ -93,7 +93,7 @@ export default function VideoPage() {
             ref={previewRef}
             className="preview"
             style={{ marginTop: 10 }}
-            src={`${API_URL}/videos/${id}/source`}
+            src={fileUrl(`/videos/${id}/source`)}
             controls
             onTimeUpdate={(e) => {
               if (e.currentTarget.currentTime >= preview.end) e.currentTarget.pause();

@@ -93,12 +93,36 @@ export type SystemInfo = {
   hardware: { cpu_count: number; gpu_available: boolean; gpu_name: string | null };
 };
 
-export class ApiError extends Error {}
+export class ApiError extends Error {
+  constructor(message: string, public status = 0) {
+    super(message);
+  }
+}
+
+const TOKEN_KEY = "gcf_api_token";
+
+/** Jeton d'accès saisi par l'utilisateur (gardé dans ce navigateur uniquement). */
+export function getToken(): string {
+  try {
+    return typeof window === "undefined" ? "" : localStorage.getItem(TOKEN_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+export function setToken(token: string) {
+  try {
+    if (token) localStorage.setItem(TOKEN_KEY, token);
+    else localStorage.removeItem(TOKEN_KEY);
+  } catch {}
+}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const token = getToken();
+  const auth: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
   const res = await fetch(`${API_URL}${path}`, {
     ...init,
-    headers: init?.body instanceof FormData ? init.headers : { "Content-Type": "application/json", ...init?.headers },
+    headers: init?.body instanceof FormData ? { ...auth } : { "Content-Type": "application/json", ...auth, ...init?.headers },
     cache: "no-store",
   });
   if (!res.ok) {
@@ -107,7 +131,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       const body = await res.json();
       detail = typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail);
     } catch {}
-    throw new ApiError(detail);
+    throw new ApiError(detail, res.status);
   }
   return res.json() as Promise<T>;
 }
@@ -134,8 +158,16 @@ export const api = {
   job: (id: string) => request<Job>(`/jobs/${id}`),
 };
 
-export const fileUrl = (path: string | null | undefined, bust?: string | number) =>
-  path ? `${API_URL}${path}${bust ? `?v=${bust}` : ""}` : undefined;
+/** URL d'un média de l'API (balises <video>/<img> : le jeton passe en paramètre). */
+export const fileUrl = (path: string | null | undefined, bust?: string | number) => {
+  if (!path) return undefined;
+  const params = new URLSearchParams();
+  if (bust) params.set("v", String(bust));
+  const token = getToken();
+  if (token) params.set("token", token);
+  const qs = params.toString();
+  return `${API_URL}${path}${qs ? `?${qs}` : ""}`;
+};
 
 export const fmt = (s: number) => {
   const m = Math.floor(s / 60);

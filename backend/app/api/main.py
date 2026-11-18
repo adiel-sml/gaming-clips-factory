@@ -1,6 +1,8 @@
 """API REST GamingClips Factory. Documentation interactive : /docs (Swagger) et /redoc."""
 from __future__ import annotations
 
+import hmac
+import os
 import shutil
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -8,7 +10,7 @@ from typing import Optional
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlmodel import Session, func, select
 
@@ -43,7 +45,30 @@ app = FastAPI(
     description="Transforme des vidéos/streams gaming (dont vous avez les droits) en clips verticaux prêts à publier.",
     lifespan=lifespan,
 )
-app.add_middleware(CORSMiddleware, allow_origins=get_settings().get("api.cors_origins", ["*"]),
+PUBLIC_PATHS = {"/health", "/docs", "/redoc", "/openapi.json", "/docs/oauth2-redirect"}
+
+
+def _cors_origins() -> list[str]:
+    env = os.environ.get("GCF_CORS_ORIGINS")
+    if env:
+        return [o.strip() for o in env.split(",") if o.strip()]
+    return get_settings().get("api.cors_origins", ["*"])
+
+
+@app.middleware("http")
+async def require_token(request: Request, call_next):
+    """Si GCF_API_TOKEN est défini, toute requête doit fournir ce jeton :
+    en-tête `Authorization: Bearer <jeton>` ou paramètre `?token=` (balises <video>/<img>)."""
+    expected = os.environ.get("GCF_API_TOKEN")
+    if expected and request.method != "OPTIONS" and request.url.path not in PUBLIC_PATHS:
+        header = request.headers.get("authorization", "")
+        given = header[7:] if header.lower().startswith("bearer ") else request.query_params.get("token", "")
+        if not hmac.compare_digest(given.encode(), expected.encode()):
+            return JSONResponse({"detail": "Jeton d'accès manquant ou invalide"}, status_code=401)
+    return await call_next(request)
+
+
+app.add_middleware(CORSMiddleware, allow_origins=_cors_origins(),
                    allow_methods=["*"], allow_headers=["*"])
 app.mount("/files", StaticFiles(directory=str(get_settings().output_dir), check_dir=False), name="files")
 app.state.pipeline_kwargs = {}   # injection (tests : transcripteur factice, etc.)
