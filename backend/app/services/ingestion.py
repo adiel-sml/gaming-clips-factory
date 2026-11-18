@@ -27,6 +27,25 @@ class IngestionError(ValueError):
     pass
 
 
+BOT_CHECK_MSG = (
+    "YouTube refuse le téléchargement depuis ce serveur (vérification anti-robot : les serveurs cloud sont "
+    "souvent bloqués). Le système ne contourne pas cette protection. Solutions : 1) si c'est votre vidéo, "
+    "téléchargez-la depuis YouTube Studio puis envoyez le fichier (avec Début/Fin pour un extrait) ; "
+    "2) sinon, demandez le fichier au créateur ; 3) ou lancez la CLI sur votre ordinateur."
+)
+
+
+def _download_error(exc: Exception, what: str) -> IngestionError:
+    msg = str(exc)
+    if "not a bot" in msg or "Sign in to confirm" in msg:
+        return IngestionError(BOT_CHECK_MSG)
+    if "Private video" in msg or "members-only" in msg.lower():
+        return IngestionError("Vidéo privée ou réservée aux membres : impossible de la récupérer.")
+    return IngestionError(
+        f"{what} : {msg.replace('ERROR: ', '')[:200]}. Le système ne contourne pas les protections des "
+        "plateformes ; importez plutôt le fichier source que vous détenez.")
+
+
 class VideoIngestionService:
     def __init__(self, session: Session, settings: Settings | None = None):
         self.db = session
@@ -168,9 +187,7 @@ class VideoIngestionService:
             with yt_dlp.YoutubeDL({"quiet": True, "no_warnings": True, "noplaylist": True}) as ydl:
                 return ydl.extract_info(url, download=False) or {}
         except Exception as exc:
-            raise IngestionError(
-                f"Vidéo inaccessible : {str(exc)[:300]}. Le système ne contourne pas les protections "
-                "des plateformes ; importez plutôt le fichier source que vous détenez.") from exc
+            raise _download_error(exc, "Vidéo inaccessible") from exc
 
     def _download(self, url: str, out_dir: Path, video: Video, section: tuple[float, float] | None = None) -> Path:
         try:
@@ -197,9 +214,7 @@ class VideoIngestionService:
             with yt_dlp.YoutubeDL(opts) as ydl:
                 info = ydl.extract_info(url, download=True)
         except Exception as exc:  # yt_dlp.utils.DownloadError & co
-            raise IngestionError(
-                f"Téléchargement impossible : {str(exc)[:300]}. Le système ne contourne pas les protections "
-                "des plateformes ; importez plutôt le fichier source que vous détenez.") from exc
+            raise _download_error(exc, "Téléchargement impossible") from exc
         video.title = video.title or info.get("title")
         candidates = sorted(out_dir.glob("source.*"), key=lambda p: p.stat().st_size, reverse=True)
         candidates = [p for p in candidates if p.suffix not in (".part", ".ytdl", ".json")]

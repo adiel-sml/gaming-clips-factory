@@ -108,3 +108,11 @@ def test_api_section_and_original_timestamps(fresh_db, synthetic_video):
         bad = client.post("/videos", json={"source": str(synthetic_video), "rights_confirmed": True, "start": "abc"})
         assert bad.status_code == 400 and "illisible" in bad.json()["detail"]
     app.state.pipeline_kwargs = {}
+
+
+def test_youtube_bot_check_gives_clear_message():
+    from app.services.ingestion import BOT_CHECK_MSG, _download_error
+
+    err = _download_error(Exception("ERROR: [youtube] abc: Sign in to confirm you're not a bot. Use --cookies"), "x")
+    assert str(err) == BOT_CHECK_MSG and "cookies" not in str(err)
+    assert "privée" in str(_download_error(Exception("ERROR: Private video"), "x"))
