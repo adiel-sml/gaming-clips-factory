@@ -1,0 +1,4 @@
+# liste de test
+data/test/test_stream_gta6.mp4
+data/test/inexistant.mp4
+https://example.com/video.mp4

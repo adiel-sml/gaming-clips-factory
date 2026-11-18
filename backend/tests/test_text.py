@@ -71,3 +71,58 @@ def test_metadata_counts_and_relevance(settings):
     assert "#gta6" in meta["hashtags"] and "#fail" in meta["hashtags"]
     assert len(set(meta["hashtags"])) == len(meta["hashtags"])
     assert meta["titles"][1].startswith("GTA 6 :")
+
+
+class FakeLLM:
+    name = "fake-llm"
+    available = True
+
+    def __init__(self, payloads):
+        self.payloads = payloads
+        self.calls = 0
+
+    def generate_json(self, system, prompt, schema, max_tokens=4000):
+        self.calls += 1
+        key = next(iter(schema["properties"]))
+        return {key: self.payloads[key]} if key in self.payloads else None
+
+
+def test_llm_hooks_are_validated_and_metadata_merged(settings):
+    llm = FakeLLM({
+        "hooks": ["IL A TOUT PERDU EN 2 SECONDES", "IL GAGNE 5000000 DOLLARS", "Rockstar va le bannir"],
+        "titles": ["Titre A", "Titre B", "Titre C"],
+    })
+    hooks = HookGenerationService(settings, llm).generate("fail", [], "il a tout perdu en 2 secondes", "fr")
+    texts = [h["text"] for h in hooks]
+    assert texts[0] == "IL A TOUT PERDU EN 2 SECONDES" and hooks[0]["source"] == "llm"
+    assert not any("5000000" in t or "ROCKSTAR" in t for t in texts), "hooks inventés rejetés"
+
+    llm.generate_json = lambda *a, **k: {"titles": ["T1", "T2", "T3"], "captions": ["C1", "C2", "C3"],
+                                         "hashtags": ["#GTA6", "#spam!!", "#clutch"]}
+    meta = MetadataGenerationService(settings, llm).generate("fail", "texte", "HOOK", "gta6", "fr")
+    assert meta["titles"] == ["T1", "T2", "T3"] and meta["source"] == "fake-llm"
+    assert meta["hashtags"][:2] == ["#gaming", "#gamingclips"] and "#spam" in meta["hashtags"]
+    assert len(meta["hashtags"]) <= 10
+
+
+def test_llm_refine_blends_scores(settings, fresh_db):
+    from app.core.db import get_engine
+    from app.scoring.highlight import HighlightDetectionService, MomentCandidate
+    from app.services.pipeline import PipelineService
+    from sqlmodel import Session
+
+    comps = {k: 0.5 for k in ("emotional_intensity", "surprise", "action_intensity", "humor", "context_independence",
+                               "replayability", "quotability", "audio_intensity", "visual_interest")}
+    good = MomentCandidate(10, 9, 12, dict(comps), 60.0, "action", "règles", 0.8, transcript="mdr il est tombé")
+    bad = MomentCandidate(50, 49, 52, dict(comps), 60.0, "action", "règles", 0.8, transcript="on roule")
+    llm = FakeLLM({})
+    llm.generate_json = lambda *a, **k: {"moments": [
+        {"index": 0, "category": "funny", "interest": 95, "humor": 1.0, "quotability": 0.8, "context_independence": 0.9,
+         "reason": "Il tombe dans l'eau et le streamer explose de rire."},
+        {"index": 1, "category": "not_interesting", "interest": 5, "humor": 0, "quotability": 0, "context_independence": 0.2,
+         "reason": "Rien ne se passe."}]}
+    with Session(get_engine()) as db:
+        PipelineService(db, llm=llm)._llm_refine([good, bad], HighlightDetectionService(settings), settings)
+    assert good.category == "funny" and good.score > 60 and good.reason.startswith("Il tombe")
+    assert good.evidence["rule_reason"] == "règles"
+    assert bad.score < 60

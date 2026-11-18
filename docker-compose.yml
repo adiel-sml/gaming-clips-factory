@@ -1,0 +1,42 @@
+# Lancement : docker compose up --build
+#   UI  : http://localhost:3000
+#   API : http://localhost:8000/docs
+# GPU NVIDIA : décommenter le bloc `deploy` (nécessite nvidia-container-toolkit).
+services:
+  api:
+    build: { context: ., dockerfile: docker/backend.Dockerfile }
+    env_file: [.env]
+    environment:
+      GCF__QUEUE__EMBEDDED_WORKER: "false"     # le service `worker` traite la file
+    volumes:
+      - ./data:/app/data
+      - ./output:/app/output
+      - ./config:/app/config
+      - whisper-models:/root/.cache/huggingface
+    ports: ["8000:8000"]
+
+  worker:
+    build: { context: ., dockerfile: docker/backend.Dockerfile }
+    command: ["python", "-m", "app", "worker"]
+    env_file: [.env]
+    volumes:
+      - ./data:/app/data
+      - ./output:/app/output
+      - ./config:/app/config
+      - whisper-models:/root/.cache/huggingface
+    depends_on: [api]
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices: [{ driver: nvidia, count: 1, capabilities: [gpu] }]
+
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/frontend.Dockerfile
+      args: { NEXT_PUBLIC_API_URL: "http://localhost:8000" }
+    ports: ["3000:3000"]
+    depends_on: [api]
+
+volumes:
+  whisper-models:

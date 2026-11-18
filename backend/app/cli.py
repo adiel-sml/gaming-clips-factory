@@ -175,7 +175,17 @@ def batch(file: Path, confirm_rights: bool = ConfirmOpt, now: bool = typer.Optio
     lines = [ln.strip() for ln in file.read_text().splitlines() if ln.strip() and not ln.strip().startswith("#")]
     summary = []
     q = JobQueue()
-    for ref in lines:
+    from app.core.config import PROJECT_ROOT
+
+    def locate(ref: str) -> str:
+        if ref.startswith(("http://", "https://")) or Path(ref).is_absolute():
+            return ref
+        for base in (Path.cwd(), file.resolve().parent, PROJECT_ROOT):
+            if (base / ref).exists():
+                return str(base / ref)
+        return ref
+
+    for ref in map(locate, lines):
         with session_scope() as db:
             try:
                 v = _resolve_video(db, ref, confirm_rights)

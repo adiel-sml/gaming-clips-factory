@@ -8,6 +8,7 @@ from typing import Optional
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlmodel import Session, func, select
 
@@ -202,6 +203,15 @@ def list_videos(db: Session = Depends(get_session)):
 @app.get("/videos/{video_id}", tags=["vidéos"])
 def get_video(video_id: str, db: Session = Depends(get_session)):
     return video_out(get_or_404(db, Video, video_id), db)
+
+
+@app.get("/videos/{video_id}/source", tags=["vidéos"])
+def video_source(video_id: str, db: Session = Depends(get_session)):
+    """Vidéo source (pour la prévisualisation des moments ; supporte les requêtes Range)."""
+    v = get_or_404(db, Video, video_id)
+    if not v.file_path or not Path(v.file_path).exists():
+        raise HTTPException(404, "Fichier source absent")
+    return FileResponse(v.file_path, media_type="video/mp4")
 
 
 @app.post("/videos/{video_id}/analyze", tags=["vidéos"])
