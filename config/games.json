@@ -1,0 +1,117 @@
+{
+  "gta6": {
+    "name": "GTA 6",
+    "keywords": [
+      "GTA 6",
+      "GTA VI",
+      "GTA6",
+      "GTAVI",
+      "GT6",
+      "GTA six",
+      "G.T.A. 6",
+      "Grand Theft Auto VI",
+      "Grand Theft Auto 6",
+      "Vice City",
+      "Leonida"
+    ],
+    "related": [
+      "Rockstar",
+      "Rockstar Games",
+      "Take-Two"
+    ],
+    "hashtags": [
+      "#gta6",
+      "#gtavi",
+      "#grandtheftauto",
+      "#rockstargames"
+    ],
+    "asr_hints": [
+      "GTA 6",
+      "Vice City",
+      "Rockstar"
+    ]
+  },
+  "gta5": {
+    "name": "GTA V",
+    "keywords": [
+      "GTA 5",
+      "GTA V",
+      "GTA Online",
+      "GTA RP",
+      "Los Santos"
+    ],
+    "related": [
+      "Rockstar"
+    ],
+    "hashtags": [
+      "#gta5",
+      "#gtaonline",
+      "#gtarp"
+    ]
+  },
+  "fortnite": {
+    "name": "Fortnite",
+    "keywords": [
+      "Fortnite",
+      "Battle Bus",
+      "Victory Royale",
+      "top 1 fortnite"
+    ],
+    "related": [
+      "Epic Games"
+    ],
+    "hashtags": [
+      "#fortnite",
+      "#fortniteclips"
+    ]
+  },
+  "valorant": {
+    "name": "Valorant",
+    "keywords": [
+      "Valorant",
+      "Spike",
+      "Jett",
+      "Reyna",
+      "ace valo"
+    ],
+    "related": [
+      "Riot"
+    ],
+    "hashtags": [
+      "#valorant",
+      "#valorantclips"
+    ]
+  },
+  "minecraft": {
+    "name": "Minecraft",
+    "keywords": [
+      "Minecraft",
+      "Creeper",
+      "Ender Dragon",
+      "Nether"
+    ],
+    "related": [
+      "Mojang"
+    ],
+    "hashtags": [
+      "#minecraft"
+    ]
+  },
+  "warzone": {
+    "name": "Call of Duty Warzone",
+    "keywords": [
+      "Warzone",
+      "Call of Duty",
+      "CoD",
+      "Verdansk",
+      "goulag"
+    ],
+    "related": [
+      "Activision"
+    ],
+    "hashtags": [
+      "#warzone",
+      "#callofduty"
+    ]
+  }
+}

@@ -1,0 +1,115 @@
+# GamingClips Factory — configuration principale.
+# Toute valeur peut être surchargée par variable d'environnement :
+#   GCF__SECTION__CLE=valeur   (ex : GCF__VIDEO__MAX_CLIP_DURATION=45)
+
+paths:
+  data_dir: data          # vidéos importées, cache d'analyse, base SQLite, logs
+  output_dir: output      # clips exportés
+
+database:
+  url: ""                 # vide = SQLite dans data/gcf.db ; ex : postgresql+psycopg://user:pass@host/db
+
+ingestion:
+  # Le système ne traite que des contenus dont vous avez les droits.
+  require_rights_confirmation: true
+  allowed_url_domains: [youtube.com, youtu.be, twitch.tv, vimeo.com]
+  max_download_height: 1080
+  max_video_duration: 14400   # 4 h
+
+video:
+  min_clip_duration: 15
+  max_clip_duration: 60
+  target_clip_duration: 35
+  clips_per_video: 10
+
+analysis:
+  step: 0.5               # résolution temporelle des signaux (secondes)
+  frame_sample_fps: 4     # images analysées par seconde (basse résolution)
+  frame_width: 160
+  scene_cut_threshold: 28.0
+
+transcription:
+  backend: faster_whisper # faster_whisper | none
+  model: auto             # auto | tiny | base | small | medium | large-v3
+  language: auto          # auto | fr | en | ...
+  beam_size: 1
+  vad_filter: true
+  hotwords: true          # vocabulaire des jeux (games.json) pour guider Whisper
+
+scoring:
+  aggressiveness: normal  # conservative | normal | aggressive
+  weights:
+    emotional_intensity: 1.5
+    surprise: 2.0
+    action_intensity: 1.8
+    humor: 1.2
+    context_independence: 0.8
+    replayability: 0.7
+    quotability: 1.0
+    audio_intensity: 1.3
+    visual_interest: 0.8
+  min_score:              # score minimal selon l'agressivité
+    conservative: 55
+    normal: 40
+    aggressive: 25
+  peak_min_distance: 20   # secondes entre deux pics candidats
+  context_before: [3, 10]
+  context_after: [2, 8]
+  use_llm: auto           # auto (si clé API dispo) | true | false
+  llm_top_k: 15           # nombre de candidats envoyés au LLM
+
+dedup:
+  time_iou_threshold: 0.35
+  transcript_similarity_threshold: 0.75
+  phash_distance_threshold: 10
+
+composition:
+  layout: auto            # auto | gameplay | streamer | split | webcam_overlay | tracking | blur_fit
+  gameplay_mode: saliency # saliency | center | blur_fit
+  webcam_region: null     # [x, y, w, h] normalisé 0-1 pour forcer la zone webcam
+  face_detector: haar     # haar | none
+  split_top_ratio: 0.36   # part de la hauteur pour la webcam en split screen
+  tracking_smoothing: 0.85
+
+subtitles:
+  enabled: true
+  style: gaming           # preset défini dans config/subtitle_presets.yaml
+  max_words_per_line: 3
+  max_chars_per_line: 18
+
+hooks:
+  enabled: true
+  duration: 2.5
+  position: top
+  style: default
+
+variants:
+  count: 2                # variantes rendues par clip
+  # chaque variante surcharge des paramètres du rendu
+  definitions:
+    - {name: main}
+    - {name: alt, subtitle_style: high_energy, layout: blur_fit, hook_index: 1}
+
+output:
+  resolution: 1080x1920
+  fps: auto               # auto (30 ou 60 selon la source) | 30 | 60
+  video_codec: auto       # auto (nvenc si dispo) | libx264 | h264_nvenc
+  preset: veryfast
+  crf: 21
+  audio_bitrate: 160k
+  loudnorm: true
+
+llm:
+  provider: anthropic     # anthropic | none
+  model: claude-opus-5-5
+  effort: low
+  timeout: 60
+
+queue:
+  embedded_worker: true   # l'API traite elle-même la file (MVP) ; sinon lancer `clips worker`
+  poll_interval: 2
+  max_attempts: 3
+  stale_after: 7200
+
+api:
+  cors_origins: ["http://localhost:3000"]

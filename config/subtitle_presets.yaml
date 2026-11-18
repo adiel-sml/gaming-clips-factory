@@ -1,0 +1,59 @@
+# Presets de sous-titres. Couleurs en hexadécimal RGB (#RRGGBB).
+# Ajouter un preset = ajouter un bloc ici, aucun code à modifier.
+
+clean:
+  font: Inter
+  font_size: 72
+  bold: true
+  uppercase: false
+  primary_color: "#FFFFFF"
+  highlight_color: "#FFE14D"     # mot en cours de prononciation
+  keyword_color: "#FFE14D"       # mots importants
+  outline_color: "#000000"
+  outline: 5
+  shadow: 2
+  highlight_scale: 108
+  keyword_scale: 112
+  reveal: group                  # group (groupe entier) | progressive (mot par mot)
+  position_y: 0.72               # centre vertical relatif (0 = haut, 1 = bas)
+  animation: none                # none | pop | shake
+  emotional_style: false
+
+gaming:
+  font: Inter
+  font_size: 84
+  bold: true
+  uppercase: true
+  primary_color: "#FFFFFF"
+  highlight_color: "#3DFF6E"
+  keyword_color: "#FFD400"
+  outline_color: "#000000"
+  outline: 7
+  shadow: 3
+  highlight_scale: 118
+  keyword_scale: 125
+  reveal: progressive
+  position_y: 0.70
+  animation: pop
+  emotional_style: true
+  emotional_color: "#FF3B3B"
+
+high_energy:
+  font: Inter
+  font_size: 96
+  bold: true
+  uppercase: true
+  primary_color: "#FFFFFF"
+  highlight_color: "#FFD400"
+  keyword_color: "#FF3B3B"
+  outline_color: "#000000"
+  outline: 8
+  shadow: 4
+  highlight_scale: 125
+  keyword_scale: 135
+  reveal: progressive
+  position_y: 0.66
+  animation: shake
+  emotional_style: true
+  emotional_color: "#FF3B3B"
+  max_words_per_line: 2
