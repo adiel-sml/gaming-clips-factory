@@ -21,6 +21,8 @@ class VideoCreate(BaseModel):
     rights_confirmed: bool = Field(False, description="Je confirme avoir le droit d'utiliser cette vidéo")
     rights_note: Optional[str] = None
     title: Optional[str] = None
+    start: Optional[str] = Field(None, description="Début de l'extrait à importer : « 6:00:00 », « 6h », « 21600 »… (vide = début)")
+    end: Optional[str] = Field(None, description="Fin de l'extrait : « 7:00:00 », « 7h »… (vide = fin de la vidéo)")
     options: VideoOptions = Field(default_factory=VideoOptions)
     auto: Literal["none", "analyze", "pipeline"] = "analyze"
 

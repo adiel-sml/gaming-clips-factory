@@ -11,6 +11,7 @@ export default function ImportPage() {
   const [file, setFile] = useState<File | null>(null);
   const [rights, setRights] = useState(false);
   const [mode, setMode] = useState<"analyze" | "pipeline">("analyze");
+  const [range, setRange] = useState({ start: "", end: "" });
   const [opts, setOpts] = useState({
     max_video_duration: "", clips_per_video: "10", min_clip_duration: "15", max_clip_duration: "60",
     language: "auto", subtitle_style: "gaming", aggressiveness: "normal",
@@ -37,6 +38,8 @@ export default function ImportPage() {
         form.append("file", file);
         form.append("rights_confirmed", "true");
         form.append("auto", mode);
+        if (range.start) form.append("start", range.start);
+        if (range.end) form.append("end", range.end);
         res = await api.uploadVideo(form);
       } else {
         const num = (v: string) => (v === "" ? undefined : Number(v));
@@ -44,6 +47,8 @@ export default function ImportPage() {
           source: source.trim(),
           rights_confirmed: true,
           auto: mode,
+          start: range.start || undefined,
+          end: range.end || undefined,
           options: {
             max_video_duration: num(opts.max_video_duration),
             clips_per_video: num(opts.clips_per_video),
@@ -81,7 +86,17 @@ export default function ImportPage() {
           <input id="file" type="file" accept="video/*" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
         </div>
 
-        <h2 style={{ marginTop: 8 }}>Options</h2>
+        <h2 style={{ marginTop: 8 }}>Extrait (optionnel)</h2>
+        <p className="muted small" style={{ marginTop: -4 }}>
+          Pour un long stream, n&apos;importez qu&apos;une partie : seul cet extrait est téléchargé et analysé.
+          Formats : 6:00:00, 6h, 6h30, 90m.
+        </p>
+        <div className="fields">
+          <div><label>Début</label><input placeholder="ex. 6:00:00" value={range.start} onChange={(e) => setRange({ ...range, start: e.target.value })} /></div>
+          <div><label>Fin</label><input placeholder="ex. 7:00:00" value={range.end} onChange={(e) => setRange({ ...range, end: e.target.value })} /></div>
+        </div>
+
+        <h2>Options</h2>
         <div className="fields">
           <div><label>Durée max analysée (s)</label><input type="number" min={0} placeholder="tout" value={opts.max_video_duration} onChange={set("max_video_duration")} /></div>
           <div><label>Nombre de clips</label><input type="number" min={1} max={50} value={opts.clips_per_video} onChange={set("clips_per_video")} /></div>

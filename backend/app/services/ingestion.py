@@ -16,7 +16,7 @@ from urllib.parse import urlparse
 from sqlmodel import Session, select
 
 from app.core.config import Settings, get_settings
-from app.core.utils import file_fingerprint, get_logger, utcnow
+from app.core.utils import file_fingerprint, fmt_ts, get_logger, parse_time, utcnow
 from app.models.entities import Video, VideoStatus
 from app.video import ffmpeg
 
@@ -58,20 +58,70 @@ class VideoIngestionService:
         self.db.refresh(video)
         return video
 
+    # ------------------------------------------------------------------ plage horaire
+    @staticmethod
+    def _section(start, end, total: float | None = None) -> tuple[float, float] | None:
+        """Valide une plage [début, fin] (secondes ou texte « 6:00:00 », « 6h »…). None = vidéo entière."""
+        try:
+            s, e = parse_time(start), parse_time(end)
+        except ValueError as exc:
+            raise IngestionError(str(exc)) from exc
+        if s is None and e is None:
+            return None
+        s = s or 0.0
+        if total:
+            if s >= total:
+                raise IngestionError(f"Le début ({fmt_ts(s)}) dépasse la durée de la vidéo ({fmt_ts(total)}).")
+            e = min(e if e is not None else total, total)
+        if e is None or e <= s:
+            raise IngestionError("La fin de la plage doit être après le début.")
+        if e - s < 10:
+            raise IngestionError("Plage trop courte (10 s minimum).")
+        return round(s, 2), round(e, 2)
+
+    @staticmethod
+    def _same_section(video: Video, section: tuple[float, float] | None) -> bool:
+        o = video.options or {}
+        start = o.get("section_requested_start", o.get("section_start"))
+        current = (start, o["section_end"]) if "section_start" in o else None
+        return current == section
+
+    def _apply_section(self, video: Video, section: tuple[float, float] | None) -> None:
+        if section:
+            video.options = {**(video.options or {}), "section_start": section[0], "section_end": section[1]}
+            base = video.title or "vidéo"
+            video.title = f"{base} [{fmt_ts(section[0])[:8]} → {fmt_ts(section[1])[:8]}]"
+
     # ------------------------------------------------------------------ fichier local
     def import_file(self, path: str | Path, title: str | None = None, rights_confirmed: bool = False,
-                    rights_note: str | None = None, options: dict | None = None) -> tuple[Video, bool]:
-        """Retourne (vidéo, déjà_existante)."""
+                    rights_note: str | None = None, options: dict | None = None,
+                    start=None, end=None) -> tuple[Video, bool]:
+        """Retourne (vidéo, déjà_existante). `start`/`end` : n'importer qu'un extrait."""
         self._check_rights(rights_confirmed)
         src = Path(path).expanduser().resolve()
         if not src.is_file():
             raise IngestionError(f"Fichier introuvable : {src}")
+        section = self._section(start, end, ffmpeg.probe(src).duration) if (start or end) else None
         fp = file_fingerprint(src)
-        existing = self.db.exec(select(Video).where(Video.file_hash == fp)).first()
-        if existing:
-            return existing, True
+        for existing in self.db.exec(select(Video).where(Video.file_hash == fp)).all():
+            if self._same_section(existing, section):
+                return existing, True
         video = Video(source_type="file", title=title or src.stem, file_hash=fp, rights_note=rights_note,
                       options=options or {})
+        self._apply_section(video, section)
+        if section:
+            # la coupe sans ré-encodage commence à l'image-clé précédente : on enregistre ce vrai début
+            # pour que les heures « dans la vidéo d'origine » restent exactes
+            kf = ffmpeg.keyframe_before(src, section[0])
+            video.options = {**video.options, "section_start": round(kf, 4), "section_requested_start": section[0]}
+            section = (kf, section[1])
+            # extrait sans ré-encodage (rapide) ; précision au keyframe près
+            dst = self.video_dir(video.id) / "source.mp4"
+            # +5 ms : garantit que FFmpeg retient cette image-clé et pas la précédente (arrondis)
+            ffmpeg.run(["ffmpeg", "-y", "-v", "error", "-ss", f"{section[0] + 0.005:.3f}", "-to", f"{section[1]:.3f}",
+                        "-i", str(src), "-map", "0:v:0", "-map", "0:a:0?", "-c", "copy",
+                        "-avoid_negative_ts", "make_zero", "-movflags", "+faststart", str(dst)])
+            return self._finalize(video, dst), False
         dst = self.video_dir(video.id) / f"source{src.suffix.lower()}"
         try:
             dst.symlink_to(src)          # pas de copie de fichiers de plusieurs Go
@@ -81,22 +131,48 @@ class VideoIngestionService:
 
     # ------------------------------------------------------------------ URL
     def import_url(self, url: str, rights_confirmed: bool = False, rights_note: str | None = None,
-                   title: str | None = None, options: dict | None = None) -> tuple[Video, bool]:
+                   title: str | None = None, options: dict | None = None, start=None, end=None) -> tuple[Video, bool]:
         self._check_rights(rights_confirmed)
         host = (urlparse(url).hostname or "").lower()
         allowed = self.s.get("ingestion.allowed_url_domains", []) or []
         if allowed and not any(host == d or host.endswith("." + d) for d in allowed):
             raise IngestionError(f"Domaine non autorisé : {host}. Autorisés : {', '.join(allowed)}")
-        existing = self.db.exec(select(Video).where(Video.source_url == url)).first()
+        info = self._probe_url(url)
+        total = float(info.get("duration") or 0) or None
+        section = self._section(start, end, total) if (start or end) else None
+        max_d = float(self.s.get("ingestion.max_video_duration", 14400))
+        length = (section[1] - section[0]) if section else total
+        if length and length > max_d:
+            raise IngestionError(
+                f"Vidéo trop longue ({fmt_ts(length)[:8]}, max {fmt_ts(max_d)[:8]}). Indiquez une plage "
+                "début/fin, par ex. de 6:00:00 à 7:00:00.")
+        candidates = self.db.exec(select(Video).where(Video.source_url == url)).all()
+        existing = next((v for v in candidates if self._same_section(v, section)), None)
         if existing and existing.status != VideoStatus.FAILED and existing.file_path:
             return existing, True
-        video = existing or Video(source_type="url", source_url=url, title=title, rights_note=rights_note,
-                                  options=options or {})
-        path = self._download(url, self.video_dir(video.id), video)
+        video = existing or Video(source_type="url", source_url=url, title=title or info.get("title"),
+                                  rights_note=rights_note, options=options or {})
+        if not existing:
+            self._apply_section(video, section)
+        path = self._download(url, self.video_dir(video.id), video, section)
         video.file_hash = file_fingerprint(path)
         return self._finalize(video, path), False
 
-    def _download(self, url: str, out_dir: Path, video: Video) -> Path:
+    def _probe_url(self, url: str) -> dict:
+        """Métadonnées (titre, durée) sans rien télécharger."""
+        try:
+            import yt_dlp
+        except ImportError as exc:
+            raise IngestionError("yt-dlp n'est pas installé (pip install yt-dlp).") from exc
+        try:
+            with yt_dlp.YoutubeDL({"quiet": True, "no_warnings": True, "noplaylist": True}) as ydl:
+                return ydl.extract_info(url, download=False) or {}
+        except Exception as exc:
+            raise IngestionError(
+                f"Vidéo inaccessible : {str(exc)[:300]}. Le système ne contourne pas les protections "
+                "des plateformes ; importez plutôt le fichier source que vous détenez.") from exc
+
+    def _download(self, url: str, out_dir: Path, video: Video, section: tuple[float, float] | None = None) -> Path:
         try:
             import yt_dlp
         except ImportError as exc:
@@ -111,6 +187,12 @@ class VideoIngestionService:
             "no_warnings": True,
             "restrictfilenames": True,
         }
+        if section:
+            # ne télécharge que la plage demandée (1 h au lieu de 10 h)
+            from yt_dlp.utils import download_range_func
+
+            opts["download_ranges"] = download_range_func(None, [section])
+            opts["force_keyframes_at_cuts"] = True
         try:
             with yt_dlp.YoutubeDL(opts) as ydl:
                 info = ydl.extract_info(url, download=True)

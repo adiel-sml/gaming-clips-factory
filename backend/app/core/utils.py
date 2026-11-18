@@ -26,6 +26,39 @@ def fmt_ts(seconds: float) -> str:
     return f"{h:02d}:{m:02d}:{s:05.2f}"
 
 
+def parse_time(value: str | float | int | None) -> float | None:
+    """Heure lisible -> secondes. Accepte : 21600, "6:00:00", "62:30", "6h", "6h30", "6h30m15s", "90m", "45s".
+    Retourne None si vide."""
+    import re
+
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value).strip().lower()
+    if not text:
+        return None
+    if re.fullmatch(r"\d+(\.\d+)?", text):
+        return float(text)
+    if re.fullmatch(r"\d+(:\d{1,2}){1,2}(\.\d+)?", text):
+        return parse_ts(text)
+    # unités : 6h, 6h30, 6h30m15s, 90m, 90min, 2m30, 45s
+    tokens = re.findall(r"(\d+)(h|min|m|s)?", text)
+    if tokens and "".join(n + u for n, u in tokens) == text:
+        factor = {"h": 3600, "min": 60, "m": 60, "s": 1}
+        total, prev = 0.0, None
+        for i, (num, unit) in enumerate(tokens):
+            if not unit:  # nombre sans unité : seulement en dernier, après h (minutes) ou m (secondes)
+                if i != len(tokens) - 1 or prev not in ("h", "m", "min"):
+                    break
+                unit = "m" if prev == "h" else "s"
+            total += int(num) * factor[unit]
+            prev = unit
+        else:
+            return total
+    raise ValueError(f"Heure illisible : « {value} » (exemples : 6:00:00, 6h, 6h30, 90m)")
+
+
 def parse_ts(value: str | float | int) -> float:
     if isinstance(value, (int, float)):
         return float(value)

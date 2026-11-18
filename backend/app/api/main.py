@@ -104,9 +104,15 @@ def video_out(v: Video, db: Session | None = None) -> dict:
     return d
 
 
-def highlight_out(h: Highlight, db: Session | None = None) -> dict:
+def highlight_out(h: Highlight, db: Session | None = None, offset: float | None = None) -> dict:
     d = h.model_dump()
-    d.update(start_ts=fmt_ts(h.start), end_ts=fmt_ts(h.end))
+    if offset is None and db is not None:
+        v = db.get(Video, h.video_id)
+        offset = float((v.options or {}).get("section_start", 0)) if v else 0.0
+    offset = offset or 0.0
+    # start/end : position dans l'extrait importé ; source_* : position dans la vidéo d'origine
+    d.update(start_ts=fmt_ts(h.start), end_ts=fmt_ts(h.end), source_offset=offset,
+             source_start_ts=fmt_ts(offset + h.start), source_end_ts=fmt_ts(offset + h.end))
     if db is not None:
         clips = db.exec(select(Clip).where(Clip.highlight_id == h.id)).all()
         d["clips"] = [clip_out(c) for c in clips]
@@ -170,7 +176,7 @@ def stats(db: Session = Depends(get_session)):
         "errors": [{"video_id": v.id, "title": v.title, "error": (v.error or "")[:300]} for v in videos if v.status == "failed"]
                   + [{"job_id": j.id, "type": j.type, "error": (j.error or "").split("\n")[0][:300]}
                      for j in db.exec(select(Job).where(Job.status == "failed").limit(10)).all()],
-        "best_highlights": [highlight_out(h) for h in best],
+        "best_highlights": [highlight_out(h, db) for h in best],
     }
 
 
@@ -189,9 +195,11 @@ def create_video(body: VideoCreate, db: Session = Depends(get_session)):
     opts = body.options.model_dump(exclude_none=True)
     try:
         if body.source.startswith(("http://", "https://")):
-            video, existed = ing.import_url(body.source, body.rights_confirmed, body.rights_note, body.title, opts)
+            video, existed = ing.import_url(body.source, body.rights_confirmed, body.rights_note, body.title, opts,
+                                            start=body.start, end=body.end)
         else:
-            video, existed = ing.import_file(body.source, body.title, body.rights_confirmed, body.rights_note, opts)
+            video, existed = ing.import_file(body.source, body.title, body.rights_confirmed, body.rights_note, opts,
+                                             start=body.start, end=body.end)
     except IngestionError as exc:
         raise HTTPException(400, str(exc)) from exc
     if existed and opts:
@@ -204,7 +212,8 @@ def create_video(body: VideoCreate, db: Session = Depends(get_session)):
 
 @app.post("/videos/upload", status_code=201, tags=["vidéos"])
 def upload_video(file: UploadFile = File(...), rights_confirmed: bool = Form(False), title: Optional[str] = Form(None),
-                 auto: str = Form("analyze"), db: Session = Depends(get_session)):
+                 auto: str = Form("analyze"), start: Optional[str] = Form(None), end: Optional[str] = Form(None),
+                 db: Session = Depends(get_session)):
     """Envoi d'un fichier vidéo depuis le navigateur."""
     uploads = get_settings().data_dir / "uploads"
     uploads.mkdir(parents=True, exist_ok=True)
@@ -213,7 +222,8 @@ def upload_video(file: UploadFile = File(...), rights_confirmed: bool = Form(Fal
     with dst.open("wb") as f:
         shutil.copyfileobj(file.file, f)
     try:
-        video, existed = VideoIngestionService(db).import_file(dst, title or Path(safe).stem, rights_confirmed)
+        video, existed = VideoIngestionService(db).import_file(dst, title or Path(safe).stem, rights_confirmed,
+                                                               start=start or None, end=end or None)
     except IngestionError as exc:
         dst.unlink(missing_ok=True)
         raise HTTPException(400, str(exc)) from exc

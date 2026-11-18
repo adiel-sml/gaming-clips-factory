@@ -40,8 +40,9 @@ def _out(data) -> None:
     typer.echo(json.dumps(data, ensure_ascii=False, indent=2, default=str))
 
 
-def _resolve_video(session, ref: str, confirm_rights: bool, title: str | None = None, options: dict | None = None) -> Video:
-    """Accepte un id de vidéo, un chemin de fichier ou une URL."""
+def _resolve_video(session, ref: str, confirm_rights: bool, title: str | None = None, options: dict | None = None,
+                   start: str | None = None, end: str | None = None) -> Video:
+    """Accepte un id de vidéo, un chemin de fichier ou une URL (avec plage début/fin optionnelle)."""
     from app.services.ingestion import VideoIngestionService
 
     video = session.get(Video, ref)
@@ -49,9 +50,11 @@ def _resolve_video(session, ref: str, confirm_rights: bool, title: str | None = 
         return video
     ing = VideoIngestionService(session)
     if ref.startswith(("http://", "https://")):
-        video, existed = ing.import_url(ref, rights_confirmed=confirm_rights, title=title, options=options)
+        video, existed = ing.import_url(ref, rights_confirmed=confirm_rights, title=title, options=options,
+                                        start=start, end=end)
     else:
-        video, existed = ing.import_file(ref, title=title, rights_confirmed=confirm_rights, options=options)
+        video, existed = ing.import_file(ref, title=title, rights_confirmed=confirm_rights, options=options,
+                                         start=start, end=end)
     typer.echo(f"{'Déjà importée' if existed else 'Importée'} : {video.id} ({video.title}, {video.duration:.0f}s)")
     return video
 
@@ -63,6 +66,8 @@ def _options(min_d, max_d, clips, lang, style, aggr, layout) -> dict:
 
 
 ConfirmOpt = typer.Option(False, "--confirm-rights", help="Je confirme avoir le droit d'utiliser cette vidéo")
+FromOpt = typer.Option(None, "--from", help="Début de l'extrait à importer (ex. 6:00:00, 6h, 6h30)")
+ToOpt = typer.Option(None, "--to", help="Fin de l'extrait à importer (ex. 7:00:00, 7h)")
 
 
 @app.command("hw")
@@ -77,16 +82,17 @@ def hardware():
 
 @app.command("import")
 def import_(source: str, confirm_rights: bool = ConfirmOpt, title: Optional[str] = None,
-            rights_note: Optional[str] = typer.Option(None, help="Origine des droits (licence, accord…)")):
+            rights_note: Optional[str] = typer.Option(None, help="Origine des droits (licence, accord…)"),
+            start: Optional[str] = FromOpt, end: Optional[str] = ToOpt):
     """Importe un fichier local ou une URL autorisée."""
     from app.services.ingestion import VideoIngestionService
 
     with session_scope() as db:
         ing = VideoIngestionService(db)
         if source.startswith(("http://", "https://")):
-            v, existed = ing.import_url(source, confirm_rights, rights_note, title)
+            v, existed = ing.import_url(source, confirm_rights, rights_note, title, start=start, end=end)
         else:
-            v, existed = ing.import_file(source, title, confirm_rights, rights_note)
+            v, existed = ing.import_file(source, title, confirm_rights, rights_note, start=start, end=end)
         _out({"id": v.id, "title": v.title, "duration": v.duration, "resolution": f"{v.width}x{v.height}",
               "fps": v.fps, "already_imported": existed})
 
@@ -95,12 +101,14 @@ def import_(source: str, confirm_rights: bool = ConfirmOpt, title: Optional[str]
 def analyze(video: str, confirm_rights: bool = ConfirmOpt, force: bool = False,
             clips: Optional[int] = typer.Option(None, help="Nombre de moments à retenir"),
             min_duration: Optional[float] = None, max_duration: Optional[float] = None,
-            language: Optional[str] = None, aggressiveness: Optional[str] = None):
+            language: Optional[str] = None, aggressiveness: Optional[str] = None,
+            start: Optional[str] = FromOpt, end: Optional[str] = ToOpt):
     """Analyse une vidéo (transcription + détection des moments)."""
     from app.services.pipeline import PipelineService
 
     with session_scope() as db:
-        v = _resolve_video(db, video, confirm_rights, options=_options(min_duration, max_duration, clips, language, None, aggressiveness, None))
+        v = _resolve_video(db, video, confirm_rights, start=start, end=end,
+                           options=_options(min_duration, max_duration, clips, language, None, aggressiveness, None))
         hls = PipelineService(db).analyze(v.id, force=force)
         _print_highlights(hls)
 
@@ -152,12 +160,13 @@ def pipeline(video: str, confirm_rights: bool = ConfirmOpt, top: Optional[int] =
              force: bool = False, clips: Optional[int] = None, min_duration: Optional[float] = None,
              max_duration: Optional[float] = None, language: Optional[str] = None,
              style: Optional[str] = typer.Option(None, help="Preset de sous-titres"),
-             aggressiveness: Optional[str] = None, layout: Optional[str] = None):
+             aggressiveness: Optional[str] = None, layout: Optional[str] = None,
+             start: Optional[str] = FromOpt, end: Optional[str] = ToOpt):
     """Tout le pipeline : import → analyse → clips → QC → export."""
     from app.services.pipeline import PipelineService
 
     with session_scope() as db:
-        v = _resolve_video(db, video, confirm_rights,
+        v = _resolve_video(db, video, confirm_rights, start=start, end=end,
                            options=_options(min_duration, max_duration, clips, language, style, aggressiveness, layout))
         result = PipelineService(db).run_full(v.id, top_n=top, force=force)
         for cid in result["clips"]:
@@ -168,7 +177,7 @@ def pipeline(video: str, confirm_rights: bool = ConfirmOpt, top: Optional[int] =
 @app.command()
 def batch(file: Path, confirm_rights: bool = ConfirmOpt, now: bool = typer.Option(False, help="Traiter immédiatement (sinon : file d'attente)"),
           top: Optional[int] = None):
-    """Traite une liste de vidéos (une URL ou un chemin par ligne, # = commentaire)."""
+    """Traite une liste de vidéos. Une ligne = « source [début] [fin] », ex. « https://youtu.be/xxx 6:00:00 7:00:00 »."""
     from app.services.pipeline import PipelineService
     from app.workers.queue import JobQueue
 
@@ -185,10 +194,12 @@ def batch(file: Path, confirm_rights: bool = ConfirmOpt, now: bool = typer.Optio
                 return str(base / ref)
         return ref
 
-    for ref in map(locate, lines):
+    for line in lines:
+        parts = line.split()
+        ref, rng_start, rng_end = locate(parts[0]), (parts[1] if len(parts) > 1 else None), (parts[2] if len(parts) > 2 else None)
         with session_scope() as db:
             try:
-                v = _resolve_video(db, ref, confirm_rights)
+                v = _resolve_video(db, ref, confirm_rights, start=rng_start, end=rng_end)
                 if v.status == "analyzed" and db.exec(select(Clip).where(Clip.video_id == v.id)).first():
                     summary.append({"source": ref, "video_id": v.id, "status": "déjà traitée"})
                     continue

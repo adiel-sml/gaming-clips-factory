@@ -56,6 +56,9 @@ export type Highlight = {
   end: number;
   start_ts: string;
   end_ts: string;
+  source_offset?: number;
+  source_start_ts?: string;
+  source_end_ts?: string;
   peak: number;
   duration: number;
   score: number;

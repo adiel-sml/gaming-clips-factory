@@ -357,7 +357,11 @@ class PipelineService:
                       "source_url": video.source_url, "game": video.game, "language": transcript.language,
                       "rights_note": video.rights_note},
             "timing": {"start": clip.start, "end": clip.end, "duration": round(clip.end - clip.start, 2),
-                       "start_ts": fmt_ts(clip.start), "end_ts": fmt_ts(clip.end), "peak": hl.peak},
+                       "start_ts": fmt_ts(clip.start), "end_ts": fmt_ts(clip.end), "peak": hl.peak,
+                       # position dans la vidéo d'origine (si seul un extrait a été importé)
+                       "source_offset": (video.options or {}).get("section_start", 0),
+                       "source_start_ts": fmt_ts((video.options or {}).get("section_start", 0) + clip.start),
+                       "source_end_ts": fmt_ts((video.options or {}).get("section_start", 0) + clip.end)},
             "highlight": {"id": hl.id, "score": hl.score, "category": hl.category, "reason": hl.reason,
                           "confidence": hl.confidence, "components": hl.components, "signals": hl.signals},
             "transcript": transcript.text_between(clip.start, clip.end),

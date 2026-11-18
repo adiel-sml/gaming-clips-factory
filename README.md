@@ -203,7 +203,9 @@ clips analyze <video_id|fichier|URL> --confirm-rights [--clips 10 --aggressivene
 clips highlights <video_id> [--json]                 # meilleurs moments
 clips generate <highlight_id> [--variant main]       # rendu des variantes
 clips pipeline partie.mp4 --confirm-rights --top 5   # tout en une commande
-clips batch videos.txt --confirm-rights [--now]      # lot (une URL/chemin par ligne)
+clips pipeline "https://youtu.be/…" --confirm-rights --from 6:00:00 --to 7:00:00
+                                                     # long stream : seule la plage 6h-7h est téléchargée
+clips batch videos.txt --confirm-rights [--now]      # lot : « source [début] [fin] » par ligne
 clips export <clip_id> [--force]                     # → output/ready/
 clips clips --status needs_review                    # liste des clips
 clips status                                         # vue d'ensemble
@@ -223,7 +225,7 @@ Documentation interactive générée automatiquement : `http://localhost:8000/do
 
 | Méthode | Route | Rôle |
 |---|---|---|
-| POST | `/videos` | import URL/chemin + options ; `auto`: `none`/`analyze`/`pipeline` |
+| POST | `/videos` | import URL/chemin + options ; `start`/`end` (ex. `"6:00:00"`, `"7h"`) pour un extrait ; `auto`: `none`/`analyze`/`pipeline` |
 | POST | `/videos/upload` | envoi d'un fichier (multipart) |
 | GET | `/videos`, `/videos/{id}` | liste / détail (+ nb de moments, de clips, dernière tâche) |
 | GET | `/videos/{id}/source` | vidéo source (preview) |
@@ -248,6 +250,12 @@ curl -X PATCH localhost:8000/clips/<clip_id> -H 'Content-Type: application/json'
 curl -X POST localhost:8000/clips/<clip_id>/render
 curl -X POST localhost:8000/clips/<clip_id>/export -d '{}' -H 'Content-Type: application/json'
 ```
+
+**Longs streams : importer un extrait.** Indiquez une plage début/fin (formats `6:00:00`, `6h`, `6h30`,
+`90m`, `45s` ou en secondes). Pour une URL, yt-dlp ne télécharge que cette plage. Pour un fichier,
+l'extrait est copié sans ré-encodage. Les moments affichent aussi leur heure dans la vidéo d'origine
+(`source_start_ts`). Une vidéo plus longue que `ingestion.max_video_duration` (4 h par défaut) sans
+plage est refusée avec un message explicite.
 
 ## 11. Pipeline complet
 
@@ -304,7 +312,7 @@ le résultat du contrôle qualité et un bloc `performance`, que l'on remplit vi
 
 ```bash
 cd backend
-pytest                    # 49 tests : lexique, scoring, sélection, contexte, dédup, sous-titres,
+pytest                    # 68 tests : lexique, scoring, sélection, contexte, dédup, sous-titres,
                           # 6 cadrages rendus, QC, ingestion, file d'attente, API, LLM simulé, end-to-end,
                           # + vraie transcription faster-whisper (modèle tiny, ignorée si absente)
 pytest -m "not slow"      # sans le test qui télécharge un modèle Whisper

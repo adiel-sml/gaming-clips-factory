@@ -119,7 +119,8 @@ export default function VideoPage() {
                 <div style={{ minWidth: 0 }}>
                   <div className="row"><ScoreBadge score={h.score} /><CategoryTag category={h.category} /></div>
                   <div className="muted small" style={{ marginTop: 8 }}>
-                    {h.start_ts.slice(0, 8)} → {h.end_ts.slice(0, 8)} · {Math.round(h.duration)}s · confiance {Math.round(h.confidence * 100)}%
+                    {(h.source_offset ? h.source_start_ts! : h.start_ts).slice(0, 8)} → {(h.source_offset ? h.source_end_ts! : h.end_ts).slice(0, 8)}
+                    {h.source_offset ? " (vidéo d'origine)" : ""} · {Math.round(h.duration)}s · confiance {Math.round(h.confidence * 100)}%
                   </div>
                   <p className="small" style={{ margin: "8px 0 0" }}>{h.reason}</p>
                 </div>

@@ -133,6 +133,28 @@ def iter_gray_frames(src: Path, fps: float, width: int, start: float | None = No
         proc.wait()
 
 
+def keyframe_before(src: Path, t: float) -> float:
+    """Instant de la dernière image-clé <= t (une coupe sans ré-encodage démarre forcément là)."""
+    if t <= 0:
+        return 0.0
+    proc = subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "v:0", "-skip_frame", "nokey",
+         "-read_intervals", f"{max(0.0, t - 30):.3f}%{t + 0.5:.3f}", "-show_entries", "frame=pts_time,best_effort_timestamp_time",
+         "-of", "csv=p=0", str(src)],
+        capture_output=True, text=True,
+    )
+    times = []
+    for line in proc.stdout.splitlines():
+        for part in line.split(","):
+            try:
+                times.append(float(part))
+                break
+            except ValueError:
+                continue
+    before = [x for x in times if x <= t + 1e-3]
+    return max(before) if before else t
+
+
 def extract_frame(src: Path, t: float, dst: Path, width: int | None = None) -> Path:
     dst.parent.mkdir(parents=True, exist_ok=True)
     vf = ["-vf", f"scale={width}:-2"] if width else []
