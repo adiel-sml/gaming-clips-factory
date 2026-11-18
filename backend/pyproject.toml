@@ -16,6 +16,7 @@ dependencies = [
   "numpy>=1.26",
   "opencv-python-headless>=4.9",
   "faster-whisper>=1.0",
+  "av<16",                  # PyAV 16+ casse faster-whisper 1.2 (paramètre metadata_errors supprimé)
   "python-dotenv>=1.0",
   "python-multipart>=0.0.9",
 ]

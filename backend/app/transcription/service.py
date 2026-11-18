@@ -14,6 +14,21 @@ log = get_logger("transcription")
 _MODEL_CACHE: dict[tuple, object] = {}
 
 
+def _load_audio(path: Path):
+    """WAV 16 kHz mono -> tableau float32 attendu par faster-whisper (sinon conversion FFmpeg)."""
+    from app.video import ffmpeg
+
+    try:
+        samples, sr = ffmpeg.read_wav_mono(Path(path))
+    except Exception:
+        samples, sr = None, 0
+    if samples is None or sr != 16000:
+        tmp = Path(path).with_name("audio_whisper_16k.wav")
+        ffmpeg.extract_audio(Path(path), tmp, sample_rate=16000)
+        samples, sr = ffmpeg.read_wav_mono(tmp)
+    return samples
+
+
 class FasterWhisperTranscriber:
     """faster-whisper (CTranslate2) avec horodatage au mot. GPU utilisé automatiquement si dispo."""
 
@@ -35,8 +50,11 @@ class FasterWhisperTranscriber:
 
     def transcribe(self, audio_path: Path, language: str | None = None) -> Transcript:
         lang = None if language in (None, "", "auto") else language
+        # On passe l'audio déjà décodé (WAV 16 kHz mono) : pas de dépendance au décodeur PyAV,
+        # dont certaines versions cassent faster-whisper.
+        audio = _load_audio(audio_path)
         segments_iter, info = self._model().transcribe(
-            str(audio_path), language=lang, word_timestamps=True, beam_size=self.beam_size,
+            audio, language=lang, word_timestamps=True, beam_size=self.beam_size,
             vad_filter=self.vad_filter, condition_on_previous_text=False, hotwords=self.hotwords,
         )
         segments: list[Segment] = []
