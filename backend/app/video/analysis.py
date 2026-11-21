@@ -75,8 +75,7 @@ class VideoAnalysisService:
         audio_db = np.full(n, -90.0, dtype=np.float32)
         if info.has_audio:
             wav = self.audio_path(video_path, work_dir)
-            samples, sr = ffmpeg.read_wav_mono(wav)
-            audio_db = self._audio_levels(samples, sr, step, n)
+            audio_db = self._audio_levels_stream(wav, step, n)
 
         motion, cuts, bright, hashes, centers = self._visual(video_path, step, n, info.duration, progress)
         result = AnalysisResult(
@@ -98,6 +97,27 @@ class VideoAnalysisService:
         if not wav.exists():
             ffmpeg.extract_audio(video_path, wav)
         return wav
+
+    @staticmethod
+    def _audio_levels_stream(wav_path: Path, step: float, n: int) -> np.ndarray:
+        """Niveau sonore par pas, en lisant le WAV par blocs (mémoire constante, même pour 4 h)."""
+        import wave
+
+        out = np.full(n, -90.0, dtype=np.float32)
+        with wave.open(str(wav_path), "rb") as w:
+            sr, ch, width = w.getframerate(), w.getnchannels(), w.getsampwidth()
+            hop = int(sr * step)
+            for i in range(n):
+                raw = w.readframes(hop)
+                if not raw:
+                    break
+                chunk = np.frombuffer(raw, dtype=np.int16 if width == 2 else np.int8).astype(np.float32)
+                chunk /= 32768.0 if width == 2 else 128.0
+                if ch > 1:
+                    chunk = chunk.reshape(-1, ch).mean(axis=1)
+                if chunk.size:
+                    out[i] = max(-90.0, 20 * np.log10(float(np.sqrt(np.mean(chunk ** 2))) + 1e-9))
+        return out
 
     @staticmethod
     def _audio_levels(samples: np.ndarray, sr: int, step: float, n: int) -> np.ndarray:

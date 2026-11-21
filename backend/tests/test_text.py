@@ -126,3 +126,24 @@ def test_llm_refine_blends_scores(settings, fresh_db):
     assert good.category == "funny" and good.score > 60 and good.reason.startswith("Il tombe")
     assert good.evidence["rule_reason"] == "règles"
     assert bad.score < 60
+
+
+def test_audio_chunks_cut_on_silence_and_cover_everything(tmp_path):
+    import wave
+
+    import numpy as np
+
+    from app.transcription.service import iter_audio_chunks
+
+    sr = 16000
+    t = np.arange(sr * 300) / sr                       # 5 min de « parole » avec un silence à 110-111 s
+    sig = 0.5 * np.sin(2 * np.pi * 220 * t)
+    sig[110 * sr:111 * sr] = 0
+    path = tmp_path / "a.wav"
+    with wave.open(str(path), "wb") as w:
+        w.setnchannels(1), w.setsampwidth(2), w.setframerate(sr)
+        w.writeframes((sig * 32767).astype(np.int16).tobytes())
+    chunks = list(iter_audio_chunks(path, chunk_s=120, search_s=20))
+    assert 110 <= chunks[1][0] <= 111.05, "la coupe doit tomber dans le silence"
+    assert sum(len(c[1]) for c in chunks) == sig.size  # aucun échantillon perdu ni dupliqué
+    assert all(abs(c[2] - 300) < 0.01 for c in chunks)

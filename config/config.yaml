@@ -38,6 +38,7 @@ transcription:
   language: auto          # auto | fr | en | ...
   beam_size: 1
   vad_filter: true
+  chunk_seconds: 120      # transcription par morceaux de 2 min : ~550 Mo de RAM max quelle que soit la durée
   hotwords: true          # vocabulaire des jeux (games.json) pour guider Whisper
 
 scoring:
