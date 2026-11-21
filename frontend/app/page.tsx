@@ -1,10 +1,10 @@
 "use client";
 import Link from "next/link";
-import { useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { fmtTime } from "@/components/controls";
 import { Alert, CategoryTag, Empty, ScoreRing, StatCard, StatusPill } from "@/components/ui";
 import { usePoll } from "@/hooks/usePoll";
-import { api, Stats, Video } from "@/lib/api";
+import { api, Stats, SystemInfo, Video } from "@/lib/api";
 
 const ACTIVE = ["downloading", "queued", "analyzing"];
 
@@ -13,6 +13,9 @@ export default function Dashboard() {
   const videos = usePoll<Video[]>(api.videos, useCallback((d?: Video[]) => !!d?.some((v) => ACTIVE.includes(v.status)), []), 3000);
   const s = stats.data;
   const list = videos.data ?? [];
+  const [system, setSystem] = useState<SystemInfo>();
+  useEffect(() => { api.system().then(setSystem).catch(() => {}); }, []);
+  const storage = system?.storage;
 
   return (
     <div className="stack-lg">
@@ -27,6 +30,16 @@ export default function Dashboard() {
       </section>
 
       <Alert>{stats.error && `Serveur injoignable : ${stats.error}`}</Alert>
+      {storage?.persistent === false && (
+        <Alert kind="error">
+          <strong>Stockage non permanent :</strong> vidéos et clips sont effacés à chaque redéploiement du serveur.
+          Sur Railway : clic droit sur le service (ou bouton +) → <em>Volume</em> → point de montage <code>/data</code>,
+          avec les variables GCF_DATA_DIR=/data/data et GCF_OUTPUT_DIR=/data/output.
+        </Alert>
+      )}
+      {storage && storage.free_gb < 3 && (
+        <Alert kind="warn">Plus que {storage.free_gb} Go libres sur le serveur : agrandissez le volume ou supprimez d&apos;anciennes vidéos.</Alert>
+      )}
 
       <div className="grid grid-stats">
         <StatCard label="Vidéos" value={s?.videos ?? "–"} />

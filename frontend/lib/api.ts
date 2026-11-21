@@ -109,6 +109,7 @@ export type SystemInfo = {
   games: Record<string, string>;
   profiles: Record<string, string>;
   llm_picker: boolean;
+  storage?: { persistent: boolean | null; volume_mount: string | null; data_dir: string; free_gb: number; total_gb: number; platform: string };
   defaults: Record<string, string | number>;
   hardware: { cpu_count: number; gpu_available: boolean; gpu_name: string | null };
 };

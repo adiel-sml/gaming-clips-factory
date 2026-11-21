@@ -239,3 +239,14 @@ def test_analysis_reports_progress(fresh_db, synthetic_video, pipeline_factory):
         db.commit = original
         assert "Analyse de l'image et du son" in seen and "Détection des moments" in seen
         assert "progress" not in db.get(Video, video.id).stats   # retiré une fois terminé
+
+
+def test_storage_persistence_check(client, monkeypatch, tmp_path):
+    monkeypatch.setenv("RAILWAY_ENVIRONMENT", "production")
+    monkeypatch.delenv("RAILWAY_VOLUME_MOUNT_PATH", raising=False)
+    assert client.get("/system").json()["storage"]["persistent"] is False      # pas de volume : données perdues au redéploiement
+    from app.core.config import get_settings
+
+    monkeypatch.setenv("RAILWAY_VOLUME_MOUNT_PATH", str(get_settings().data_dir.parent))
+    st = client.get("/system").json()["storage"]
+    assert st["persistent"] is True and st["free_gb"] >= 0

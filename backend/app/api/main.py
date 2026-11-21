@@ -143,10 +143,26 @@ def health():
     return {"status": "ok", "time": utcnow()}
 
 
+def storage_info() -> dict:
+    """Le stockage survit-il aux redéploiements ? (Railway : volume monté via RAILWAY_VOLUME_MOUNT_PATH)."""
+    s = get_settings()
+    data = s.data_dir.resolve()
+    out = s.output_dir.resolve()
+    on_railway = bool(os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("RAILWAY_PROJECT_ID"))
+    mount = os.environ.get("RAILWAY_VOLUME_MOUNT_PATH")
+    persistent = None
+    if on_railway:
+        persistent = bool(mount) and all(str(p).startswith(str(Path(mount).resolve())) for p in (data, out))
+    usage = shutil.disk_usage(data)
+    return {"data_dir": str(data), "output_dir": str(out), "platform": "railway" if on_railway else "autre",
+            "volume_mount": mount, "persistent": persistent,
+            "free_gb": round(usage.free / 1e9, 1), "total_gb": round(usage.total / 1e9, 1)}
+
+
 @app.get("/system", tags=["système"])
 def system():
     s = get_settings()
-    return {"hardware": detect_hardware().to_dict(), "subtitle_presets": list(s.subtitle_presets().keys()),
+    return {"hardware": detect_hardware().to_dict(), "storage": storage_info(), "subtitle_presets": list(s.subtitle_presets().keys()),
             "layouts": ["auto", "gameplay", "streamer", "split", "webcam_overlay", "tracking", "blur_fit"],
             "games": {k: v.get("name", k) for k, v in s.games().items()},
             "profiles": {k: v.get("label", k) for k, v in s.profiles().items()},
