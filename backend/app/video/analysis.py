@@ -64,7 +64,7 @@ class VideoAnalysisService:
     def __init__(self, settings: Settings | None = None):
         self.s = settings or get_settings()
 
-    def analyze(self, video_path: Path, work_dir: Path, force: bool = False) -> AnalysisResult:
+    def analyze(self, video_path: Path, work_dir: Path, force: bool = False, progress=None) -> AnalysisResult:
         cache = work_dir / "analysis.json"
         if not force and (cached := read_json(cache)):
             return AnalysisResult.from_dict(cached)
@@ -78,7 +78,7 @@ class VideoAnalysisService:
             samples, sr = ffmpeg.read_wav_mono(wav)
             audio_db = self._audio_levels(samples, sr, step, n)
 
-        motion, cuts, bright, hashes, centers = self._visual(video_path, step, n)
+        motion, cuts, bright, hashes, centers = self._visual(video_path, step, n, info.duration, progress)
         result = AnalysisResult(
             step=step, duration=info.duration,
             audio_db=[round(float(x), 2) for x in audio_db],
@@ -110,7 +110,7 @@ class VideoAnalysisService:
                 out[i] = max(-90.0, 20 * np.log10(rms))
         return out
 
-    def _visual(self, video_path: Path, step: float, n: int):
+    def _visual(self, video_path: Path, step: float, n: int, duration: float = 0.0, progress=None):
         fps = float(self.s.get("analysis.frame_sample_fps", 4))
         width = int(self.s.get("analysis.frame_width", 160))
         threshold = float(self.s.get("analysis.scene_cut_threshold", 28.0))
@@ -124,6 +124,8 @@ class VideoAnalysisService:
         next_hash_t = 0.0
         diffs_hist: list[float] = []
         for t, frame in ffmpeg.iter_gray_frames(video_path, fps, width):
+            if progress and duration:
+                progress(min(1.0, t / duration))
             i = min(n - 1, int(t / step))
             bright[i] = max(bright[i], float(frame.mean()))
             if t >= next_hash_t:

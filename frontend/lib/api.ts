@@ -16,7 +16,12 @@ export type Video = {
   game: string | null;
   language: string | null;
   options: Record<string, unknown>;
-  stats: { analysis_timings?: Record<string, number>; words?: number; candidates?: number };
+  stats: {
+    analysis_timings?: Record<string, number>;
+    words?: number;
+    candidates?: number;
+    progress?: { step: string; pct: number | null };
+  };
   highlight_count?: number;
   clip_count?: number;
   last_job?: Job | null;

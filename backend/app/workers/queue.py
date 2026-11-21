@@ -47,14 +47,34 @@ class JobQueue:
         session.refresh(job)
         return job
 
-    def requeue_stale(self, session: Session) -> int:
-        limit = utcnow() - timedelta(seconds=int(self.s.get("queue.stale_after", 7200)))
-        stale = session.exec(select(Job).where(Job.status == "running", Job.started_at < limit)).all()
-        for j in stale:
-            j.status = "queued"
+    def requeue_stale(self, session: Session, all_running: bool = False) -> int:
+        """Remet en file les tâches interrompues (crash, manque de mémoire, redéploiement).
+
+        `all_running=True` (worker unique, ex. worker embarqué au démarrage de l'API) : toute tâche
+        « running » est forcément orpheline. Sinon, seulement celles plus vieilles que `stale_after`.
+        Une tâche interrompue trop souvent passe en échec avec une explication."""
+        q = select(Job).where(Job.status == "running")
+        if not all_running:
+            q = q.where(Job.started_at < utcnow() - timedelta(seconds=int(self.s.get("queue.stale_after", 7200))))
+        max_attempts = int(self.s.get("queue.max_attempts", 3))
+        jobs = session.exec(q).all()
+        for j in jobs:
+            video = session.get(Video, j.target_id) if j.type in ("analyze", "pipeline", "import") else None
+            if j.attempts >= max_attempts:
+                j.status, j.finished_at = "failed", utcnow()
+                j.error = (f"Traitement interrompu {j.attempts} fois (le serveur a redémarré en cours de route, "
+                           "souvent par manque de mémoire). Essayez un extrait plus court ou un serveur avec plus de RAM.")
+                if video:
+                    video.status, video.error = VideoStatus.FAILED, j.error
+            else:
+                j.status = "queued"
+                if video:
+                    video.status = VideoStatus.DOWNLOADING if j.type == "import" else VideoStatus.QUEUED
             session.add(j)
+            if video:
+                session.add(video)
         session.commit()
-        return len(stale)
+        return len(jobs)
 
     def claim(self, session: Session) -> Job | None:
         candidates = session.exec(select(Job).where(Job.status == "queued").order_by(Job.created_at).limit(5)).all()
@@ -115,11 +135,12 @@ class JobQueue:
         session.commit()
         return job
 
-    def run_worker(self, stop: threading.Event | None = None, once: bool = False, pipeline_factory=None) -> int:
+    def run_worker(self, stop: threading.Event | None = None, once: bool = False, pipeline_factory=None,
+                   requeue_all: bool = False) -> int:
         stop = stop or threading.Event()
         processed = 0
         with Session(get_engine(), expire_on_commit=False) as session:
-            n = self.requeue_stale(session)
+            n = self.requeue_stale(session, all_running=requeue_all)
             if n:
                 log.info("%d tâche(s) interrompue(s) remise(s) en file", n)
         interval = float(self.s.get("queue.poll_interval", 2))
@@ -146,9 +167,12 @@ class EmbeddedWorker:
         self.thread = threading.Thread(target=self._run, name="gcf-worker", daemon=True)
 
     def _run(self) -> None:
+        first = True
         while not self.stop.is_set():
             try:
-                self.queue.run_worker(self.stop)
+                # au démarrage de l'API, toute tâche « running » vient d'un processus mort : reprise immédiate
+                self.queue.run_worker(self.stop, requeue_all=first)
+                first = False
             except Exception:  # pragma: no cover - ne jamais tuer le thread
                 log.exception("Worker embarqué : erreur, redémarrage dans 5 s")
                 time.sleep(5)

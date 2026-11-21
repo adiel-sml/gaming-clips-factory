@@ -118,16 +118,33 @@ class PipelineService:
         self.db.commit()
         timings: dict[str, float] = {}
         t_all = time.time()
+        last = {"t": 0.0, "pct": -1.0}
+
+        def report(step: str, pct: float | None = None) -> None:
+            """Progression visible dans l'interface (écrite au plus toutes les 5 s)."""
+            now = time.time()
+            if pct is not None and now - last["t"] < 5 and pct - last["pct"] < 0.05 and pct < 1:
+                return
+            last["t"], last["pct"] = now, pct if pct is not None else -1.0
+            video.stats = {**(video.stats or {}), "progress": {"step": step, "pct": None if pct is None else round(pct * 100)}}
+            self.db.add(video)
+            self.db.commit()
+            log.info("%s : %s%s", video.id, step, "" if pct is None else f" {pct:.0%}")
+
         try:
             src, wd = Path(video.file_path), self.work_dir(video)
             t = time.time()
-            analysis = VideoAnalysisService(s).analyze(src, wd, force=force)
+            report("Analyse de l'image et du son", 0.0)
+            analysis = VideoAnalysisService(s).analyze(src, wd, force=force,
+                                                       progress=lambda p: report("Analyse de l'image et du son", p))
             timings["video_analysis"] = round(time.time() - t, 2)
 
             t = time.time()
             if video.has_audio:
                 audio = VideoAnalysisService(s).audio_path(src, wd)
-                transcript = TranscriptionService(self.transcriber, s).transcribe(audio, wd, force=force)
+                report("Transcription", 0.0)
+                transcript = TranscriptionService(self.transcriber, s).transcribe(
+                    audio, wd, force=force, progress=lambda p: report("Transcription", p))
             else:
                 transcript = Transcript(language="unknown", segments=[])
             timings["transcription"] = round(time.time() - t, 2)
@@ -138,6 +155,7 @@ class PipelineService:
 
             t = time.time()
             detector = HighlightDetectionService(s, games)
+            report("Détection des moments")
             candidates = detector.detect(analysis, transcript)
             max_window = (video.options or {}).get("max_video_duration")
             if max_window:
@@ -159,7 +177,8 @@ class PipelineService:
 
             timings["total"] = round(time.time() - t_all, 2)
             video.status = VideoStatus.ANALYZED
-            video.stats = {**(video.stats or {}), "analysis_timings": timings, "candidates": len(candidates),
+            video.stats = {**{k: v for k, v in (video.stats or {}).items() if k != "progress"},
+                           "analysis_timings": timings, "candidates": len(candidates),
                            "highlights": len(highlights), "words": len(transcript.words),
                            "transcription_model": transcript.model}
             video.updated_at = utcnow()

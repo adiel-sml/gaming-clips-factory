@@ -194,3 +194,46 @@ def test_api_token_protection(client, monkeypatch):
     assert client.get("/files/inexistant.mp4").status_code == 401
     pre = client.options("/stats", headers={"Origin": "http://localhost:3000", "Access-Control-Request-Method": "GET"})
     assert pre.status_code == 200                               # préflight CORS non bloqué
+
+
+def test_orphaned_jobs_recovered_on_startup(fresh_db, synthetic_video):
+    """Crash en pleine analyse : au redémarrage, la tâche repart ; après 3 interruptions, échec expliqué."""
+    from app.core.db import get_engine
+    from app.core.utils import utcnow
+    from app.workers.queue import JobQueue
+
+    with Session(get_engine(), expire_on_commit=False) as db:
+        video, _ = VideoIngestionService(db).import_file(synthetic_video, rights_confirmed=True)
+        video.status = "analyzing"
+        fresh = Job(type="analyze", target_id=video.id, status="running", attempts=1, started_at=utcnow())
+        worn = Job(type="analyze", target_id="vid_x", status="running", attempts=3, started_at=utcnow())
+        db.add_all([video, fresh, worn])
+        db.commit()
+        q = JobQueue()
+        assert q.requeue_stale(db) == 0                 # mode multi-workers : tâche récente laissée tranquille
+        assert q.requeue_stale(db, all_running=True) == 2
+        db.refresh(fresh), db.refresh(worn), db.refresh(video)
+        assert fresh.status == "queued" and video.status == "queued"
+        assert worn.status == "failed" and "mémoire" in worn.error
+
+
+def test_analysis_reports_progress(fresh_db, synthetic_video, pipeline_factory):
+    from app.core.db import get_engine
+
+    seen = []
+    with Session(get_engine(), expire_on_commit=False) as db:
+        video, _ = VideoIngestionService(db).import_file(synthetic_video, rights_confirmed=True)
+        pipe = pipeline_factory(db)
+        original = db.commit
+
+        def spy():
+            p = (db.get(Video, video.id).stats or {}).get("progress")
+            if p:
+                seen.append(p["step"])
+            original()
+
+        db.commit = spy
+        pipe.analyze(video.id)
+        db.commit = original
+        assert "Analyse de l'image et du son" in seen and "Détection des moments" in seen
+        assert "progress" not in db.get(Video, video.id).stats   # retiré une fois terminé

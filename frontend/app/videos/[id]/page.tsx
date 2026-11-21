@@ -83,7 +83,17 @@ export default function VideoPage() {
         <div className="card"><strong>Téléchargement en cours…</strong> <span className="muted">seul l&apos;extrait demandé est récupéré ; l&apos;analyse démarrera ensuite automatiquement. Vous pouvez fermer cette page.</span></div>
       )}
       {v && ["queued", "analyzing"].includes(v.status) && (
-        <div className="card"><strong>Analyse en cours…</strong> <span className="muted">extraction audio, transcription, détection des moments.</span></div>
+        <div className="card">
+          <strong>{v.status === "queued" ? "En file d'attente…" : `${v.stats?.progress?.step ?? "Analyse en cours"}…`}</strong>{" "}
+          {v.stats?.progress?.pct != null && <span className="muted">{v.stats.progress.pct} %</span>}
+          {v.stats?.progress?.pct != null && (
+            <div className="bar" style={{ marginTop: 10 }}><span style={{ width: `${v.stats.progress.pct}%` }} /></div>
+          )}
+          <p className="muted small" style={{ marginBottom: 0 }}>
+            Étapes : analyse de l&apos;image et du son → transcription → détection des moments. Sur un petit serveur, comptez
+            de 10 à 40 min pour 1 h de vidéo. Vous pouvez fermer cette page.
+          </p>
+        </div>
       )}
 
       {preview && (

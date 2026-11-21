@@ -108,7 +108,7 @@ def iter_gray_frames(src: Path, fps: float, width: int, start: float | None = No
     """Itère des images en niveaux de gris basse résolution (décodage FFmpeg, très rapide)."""
     info = probe(src)
     height = int(round(info.height * width / max(1, info.width) / 2) * 2) or width
-    cmd = ["ffmpeg", "-v", "error"]
+    cmd = ["ffmpeg", "-v", "error", "-skip_frame", "noref"]   # ~2× moins de décodage sur les vidéos avec images B
     if start is not None:
         cmd += ["-ss", f"{start:.3f}"]
     cmd += ["-i", str(src)]

@@ -48,7 +48,7 @@ class FasterWhisperTranscriber:
             _MODEL_CACHE[key] = WhisperModel(self.model_name, device=self.device, compute_type=self.compute_type)
         return _MODEL_CACHE[key]
 
-    def transcribe(self, audio_path: Path, language: str | None = None) -> Transcript:
+    def transcribe(self, audio_path: Path, language: str | None = None, progress=None) -> Transcript:
         lang = None if language in (None, "", "auto") else language
         # On passe l'audio déjà décodé (WAV 16 kHz mono) : pas de dépendance au décodeur PyAV,
         # dont certaines versions cassent faster-whisper.
@@ -59,6 +59,8 @@ class FasterWhisperTranscriber:
         )
         segments: list[Segment] = []
         for s in segments_iter:
+            if progress and info.duration:
+                progress(min(1.0, s.end / info.duration))
             words = [Word(round(w.start, 3), round(w.end, 3), w.word.strip(), round(w.probability, 3))
                      for w in (s.words or []) if w.word.strip()]
             words = merge_fragments(words)
@@ -95,13 +97,18 @@ class TranscriptionService:
         return self._transcriber
 
     def transcribe(self, audio_path: Path, work_dir: Path, language: str | None = None,
-                   force: bool = False) -> Transcript:
+                   force: bool = False, progress=None) -> Transcript:
         cache = work_dir / "transcript.json"
         if not force and (cached := read_json(cache)):
             return Transcript.from_dict(cached)
         t0 = time.time()
         lang = language or self.s.get("transcription.language", "auto")
-        transcript = self.transcriber.transcribe(audio_path, lang)
+        import inspect
+
+        if progress and "progress" in inspect.signature(self.transcriber.transcribe).parameters:
+            transcript = self.transcriber.transcribe(audio_path, lang, progress=progress)
+        else:
+            transcript = self.transcriber.transcribe(audio_path, lang)
         log.info("Transcription : %d segments, langue=%s, %.1fs", len(transcript.segments),
                  transcript.language, time.time() - t0)
         write_json(cache, transcript.to_dict())
