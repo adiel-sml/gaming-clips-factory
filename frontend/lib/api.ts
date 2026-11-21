@@ -94,6 +94,15 @@ export type Stats = {
   best_highlights: Highlight[];
 };
 
+export type Probe = {
+  title: string | null;
+  duration: number | null;
+  thumbnail: string | null;
+  uploader: string | null;
+  platform: string;
+  is_live: boolean;
+};
+
 export type SystemInfo = {
   subtitle_presets: string[];
   layouts: string[];
@@ -151,6 +160,8 @@ export const api = {
   stats: () => request<Stats>("/stats"),
   system: () => request<SystemInfo>("/system"),
   videos: () => request<Video[]>("/videos"),
+  probe: (source: string) =>
+    request<Probe>("/probe", { method: "POST", body: JSON.stringify({ source }) }),
   video: (id: string) => request<Video>(`/videos/${id}`),
   createVideo: (body: unknown) =>
     request<{ video: Video; job: Job | null; already_imported: boolean }>("/videos", { method: "POST", body: JSON.stringify(body) }),

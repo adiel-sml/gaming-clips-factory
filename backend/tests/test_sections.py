@@ -181,3 +181,18 @@ def test_async_download_failure_marks_video_failed(fresh_db, monkeypatch):
     with Session(get_engine()) as db:
         assert db.get(Video, v.id).status == "failed" and "refuse" in db.get(Video, v.id).error
         assert db.get(Job, job.id).status == "failed"
+
+
+def test_probe_endpoint(fresh_db, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from app.api.main import app
+
+    monkeypatch.setattr(VideoIngestionService, "_probe_url",
+                        lambda self, url: {"duration": 7200, "title": "Stream", "thumbnail": "https://x/t.jpg", "uploader": "Speed"})
+    app.state.disable_worker = True
+    with TestClient(app) as client:
+        r = client.post("/probe", json={"source": "https://www.twitch.tv/videos/1"})
+        assert r.status_code == 200 and r.json()["duration"] == 7200 and r.json()["platform"] == "twitch"
+        assert client.post("/probe", json={"source": "https://example.com/v"}).status_code == 400
+        assert client.post("/probe", json={"source": "pas un lien"}).status_code == 400

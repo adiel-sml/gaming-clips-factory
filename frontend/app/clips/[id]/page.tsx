@@ -2,83 +2,109 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { CategoryTag, ErrorBox, ScoreBadge, StatusPill } from "@/components/ui";
+import { ChoiceCards, RangeSlider, Segmented, TimeField, fmtTime } from "@/components/controls";
+import { useToast } from "@/components/Toast";
+import { Alert, CategoryTag, ScoreRing, Spinner, StatusPill } from "@/components/ui";
 import { usePoll, waitForJob } from "@/hooks/usePoll";
-import { api, Clip, fileUrl, SystemInfo } from "@/lib/api";
+import { api, Clip, fileUrl, SystemInfo, Video } from "@/lib/api";
 
-type Form = { start: string; end: string; layout: string; cropX: string; subtitle_style: string; hook_text: string; title: string; hashtags: string };
+type Tab = "cut" | "frame" | "text" | "publish";
+
+const LAYOUTS: { value: string; title: string; sub: string; ico: React.ReactNode }[] = [
+  { value: "", title: "Auto", sub: "Choisi selon la vidéo", ico: <div className="layout-ico"><div className="phone" style={{ display: "grid", placeItems: "center", fontSize: 18 }}>✨</div></div> },
+  { value: "gameplay", title: "Gameplay", sub: "Suit l'action", ico: <div className="layout-ico"><div className="phone"><div className="game" /></div></div> },
+  { value: "split", title: "Webcam + jeu", sub: "Facecam en haut", ico: <div className="layout-ico"><div className="phone"><div className="cam" style={{ height: "36%" }} /><div className="game" /></div></div> },
+  { value: "streamer", title: "Streamer", sub: "Webcam dominante", ico: <div className="layout-ico"><div className="phone"><div className="cam" style={{ height: "60%" }} /><div className="game" /></div></div> },
+  { value: "tracking", title: "Suivi visage", sub: "Plein cadre", ico: <div className="layout-ico"><div className="phone"><div className="cam" style={{ flex: 1 }} /></div></div> },
+  { value: "blur_fit", title: "Fond flou", sub: "Image entière", ico: <div className="layout-ico"><div className="phone"><div className="blur"><i /></div></div></div> },
+];
+
+const STYLE_CARDS: Record<string, { title: string; preview: React.ReactNode }> = {
+  gaming: { title: "Gaming", preview: <div className="sub-preview">C&apos;EST <span style={{ color: "#3DFF6E" }}>FOU</span></div> },
+  high_energy: { title: "Énergie", preview: <div className="sub-preview" style={{ fontSize: "1.2rem" }}>NON <span style={{ color: "#FFD400" }}>NON</span></div> },
+  clean: { title: "Sobre", preview: <div className="sub-preview" style={{ fontWeight: 600 }}>C&apos;est <span style={{ color: "#FFE14D" }}>fou</span></div> },
+};
+
+type Form = { start: number; end: number; layout: string; cropX: number | null; style: string; hook: string; hookDur: number; title: string; tags: string[] };
 
 export default function ClipEditor() {
   const { id } = useParams<{ id: string }>();
-  const clip = usePoll<Clip>(useCallback(() => api.clip(id), [id]), useCallback((c?: Clip) => c?.status === "rendering", []), 2500);
+  const toast = useToast();
+  const clip = usePoll<Clip>(useCallback(() => api.clip(id), [id]), useCallback((c?: Clip) => c?.status === "rendering", []), 2000);
   const [system, setSystem] = useState<SystemInfo>();
+  const [video, setVideo] = useState<Video>();
   const [form, setForm] = useState<Form>();
+  const [tab, setTab] = useState<Tab>("cut");
   const [busy, setBusy] = useState("");
-  const [msg, setMsg] = useState<string>();
-  const [error, setError] = useState<string>();
+  const [newTag, setNewTag] = useState("");
   const c = clip.data;
 
-  useEffect(() => {
-    api.system().then(setSystem).catch(() => {});
-  }, []);
-
+  useEffect(() => { api.system().then(setSystem).catch(() => {}); }, []);
+  useEffect(() => { if (c?.video_id && !video) api.video(c.video_id).then(setVideo).catch(() => {}); }, [c?.video_id, video]);
   useEffect(() => {
     if (c && !form) {
       setForm({
-        start: c.start.toFixed(2), end: c.end.toFixed(2), layout: c.layout ?? "", cropX: c.crop?.x?.toString() ?? "",
-        subtitle_style: c.subtitle_style ?? "gaming", hook_text: c.hook?.text ?? "", title: c.title ?? "", hashtags: c.hashtags.join(" "),
+        start: c.start, end: c.end, layout: c.layout ?? "", cropX: c.crop?.x ?? null, style: c.subtitle_style ?? "gaming",
+        hook: c.hook?.text ?? "", hookDur: c.hook?.duration ?? 2.5, title: c.title ?? "", tags: c.hashtags,
       });
     }
   }, [c, form]);
 
-  if (!c || !form) return <ErrorBox message={clip.error} />;
-  const set = (k: keyof Form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
-    setForm({ ...form, [k]: e.target.value });
+  if (c && c.variant === "compilation" && (tab === "cut" || tab === "frame")) setTab("publish");
+  if (!c || !form) return clip.error ? <Alert>{clip.error}</Alert> : <div className="skeleton" style={{ height: 420 }} />;
+  const isCompilation = c.variant === "compilation";
+  const set = <K extends keyof Form>(k: K, val: Form[K]) => setForm({ ...form, [k]: val });
+  const h = c.highlight;
+  const winMin = Math.max(0, Math.min(form.start, (h?.start ?? c.start) - 20));
+  const winMax = Math.min(video?.duration || Infinity, Math.max(form.end, (h?.end ?? c.end) + 20));
+  const dirty = !isCompilation && (Math.abs(form.start - c.start) > 0.01 || Math.abs(form.end - c.end) > 0.01 || form.layout !== (c.layout ?? "")
+    || form.cropX !== (c.crop?.x ?? null) || form.style !== (c.subtitle_style ?? "gaming") || form.hook !== (c.hook?.text ?? "")
+    || form.hookDur !== (c.hook?.duration ?? 2.5));
 
   async function save(): Promise<Clip | undefined> {
     if (!c || !form) return;
-    setError(undefined);
+    const body: Record<string, unknown> = { title: form.title, hashtags: form.tags };
+    if (!isCompilation) {
+      Object.assign(body, { start: form.start, end: form.end, layout: form.layout, subtitle_style: form.style,
+        hook_text: form.hook, hook_duration: form.hookDur });
+      body.crop = form.cropX == null ? Object.fromEntries(Object.entries(c.crop ?? {}).filter(([k]) => k !== "x")) : { ...c.crop, x: form.cropX };
+    }
     try {
-      const body: Record<string, unknown> = {
-        start: Number(form.start), end: Number(form.end), layout: form.layout, subtitle_style: form.subtitle_style,
-        hook_text: form.hook_text, title: form.title, hashtags: form.hashtags.split(/\s+/).filter(Boolean),
-      };
-      if (form.cropX !== "") body.crop = { ...c.crop, x: Number(form.cropX) };
       const updated = await api.patchClip(c.id, body);
       clip.setData({ ...c, ...updated });
-      setMsg(updated.status === "pending" ? "Modifications enregistrées — relancez le rendu pour les voir." : "Enregistré.");
       return updated;
     } catch (e) {
-      setError((e as Error).message);
+      toast((e as Error).message, "err");
     }
   }
 
-  async function rerender() {
+  async function saveAndRender() {
     const saved = await save();
     if (!saved) return;
-    setBusy("Rendu en cours…");
+    if (saved.status !== "pending") { toast("Enregistré"); return; }
+    setBusy("render");
     try {
       const { job } = await api.renderClip(saved.id);
-      const done = await waitForJob(job);
-      if (done.status === "failed") setError(done.error ?? "Échec du rendu");
+      const done = await waitForJob(job, () => clip.reload());
       await clip.reload();
-      setMsg("Rendu terminé.");
+      if (done.status === "failed") toast(done.error?.split("\n")[0] ?? "Échec du rendu", "err");
+      else toast("Clip mis à jour");
     } catch (e) {
-      setError((e as Error).message);
+      toast((e as Error).message, "err");
     }
     setBusy("");
   }
 
   async function exportClip(force = false) {
     if (!c) return;
-    setBusy("Export…");
-    setError(undefined);
+    setBusy("export");
     try {
+      await save();
       const res = await api.exportClip(c.id, force);
       clip.setData({ ...c, ...res.clip });
-      setMsg(`Exporté : ${res.path}`);
+      toast("Exporté : prêt à publier");
     } catch (e) {
-      setError((e as Error).message);
+      toast((e as Error).message, "err");
     }
     setBusy("");
   }
@@ -87,118 +113,200 @@ export default function ClipEditor() {
     if (!c) return;
     const updated = await api.patchClip(c.id, { status });
     clip.setData({ ...c, ...updated });
+    toast(status === "approved" ? "Clip validé" : "Clip rejeté");
   }
 
-  const h = c.highlight;
+  async function copy(text: string) {
+    try { await navigator.clipboard.writeText(text); toast("Copié"); } catch { toast("Copie impossible", "err"); }
+  }
+
+  const rendering = c.status === "rendering";
+  const crop = c.qc?.plan as { layout?: string; dead_air_removed?: number; hd_source?: string } | undefined;
+
   return (
-    <>
+    <div className="stack-lg">
       <div className="row spread">
-        <div>
-          <h1>Éditeur de clip</h1>
-          <p className="muted">
-            <Link href={`/videos/${c.video_id}`}>← vidéo</Link> · variante {c.variant} · {c.duration.toFixed(1)}s
-            {c.render_seconds ? ` · rendu en ${c.render_seconds}s` : ""}
-          </p>
-        </div>
-        <div className="row"><StatusPill status={c.status} />{h && <><ScoreBadge score={h.score} /><CategoryTag category={h.category} /></>}</div>
+        <Link href={`/videos/${c.video_id}`} className="muted small">← Moments de la vidéo</Link>
+        <div className="row"><StatusPill status={c.status} />{h && <ScoreRing score={h.score} size="sm" />}</div>
       </div>
-      <ErrorBox message={error} />
-      {msg && <div className="ok-box">{msg}</div>}
-      {!!c.qc?.reasons?.length && <ErrorBox message={`Contrôle qualité : ${c.qc.reasons.join(" · ")}`} />}
 
-      <div className="grid grid-2">
-        <div>
-          {c.status === "rendering" ? (
-            <div className="player thumb">⏳ {c.qc?.progress ?? "Rendu en cours"}…</div>
+      <div className="grid grid-split">
+        {/* ---- lecteur ---- */}
+        <div className="stack sticky-desk">
+          {rendering ? (
+            <div className="player player-empty"><Spinner /><strong>{c.qc?.progress ?? "Rendu en cours"}…</strong><span className="tiny muted">Ça prend en général moins d&apos;une minute.</span></div>
           ) : c.video_url ? (
-            <video key={c.video_url + c.render_seconds} className="player" src={fileUrl(c.video_url, c.render_seconds)} controls playsInline />
+            <video key={c.video_url + c.render_seconds} className="player" src={fileUrl(c.video_url, c.render_seconds)} controls playsInline loop />
           ) : (
-            <div className="player thumb">Pas encore rendu</div>
+            <div className="player player-empty"><span style={{ fontSize: "2rem" }}>🎬</span>Pas encore rendu</div>
           )}
-          <div className="row" style={{ marginTop: 12 }}>
-            <button className="btn btn-sm" onClick={() => setStatus("approved")}>✓ Valider</button>
-            <button className="btn btn-sm btn-danger" onClick={() => setStatus("rejected")}>✕ Rejeter</button>
-            {c.metadata_url && <a className="btn btn-sm" href={fileUrl(c.metadata_url)} target="_blank">metadata.json</a>}
+          <div className="meta-row" style={{ justifyContent: "center" }}>
+            {h && <CategoryTag category={h.category} />}
+            <span className="tag mono">⏱ {c.duration.toFixed(1)} s</span>
+            {isCompilation && <span className="tag">🎬 Compilation</span>}
+            {!!crop?.dead_air_removed && <span className="tag">✂️ {crop.dead_air_removed} s de blancs coupés</span>}
+          </div>
+          {!!c.qc?.reasons?.length && <Alert kind="warn">{c.qc.reasons.join(" · ")}</Alert>}
+          {!!c.qc?.warnings?.length && <Alert kind="info">{c.qc.warnings.join(" · ")}</Alert>}
+          <div className="grid" style={{ gridTemplateColumns: "1fr 1fr" }}>
+            <button className="btn" onClick={() => setStatus("approved")}>👍 Valider</button>
+            <button className="btn btn-danger" onClick={() => setStatus("rejected")}>👎 Rejeter</button>
           </div>
         </div>
 
-        <div className="card">
-          <div className="fields">
-            <div><label>Début (s)</label><input type="number" step="0.1" value={form.start} onChange={set("start")} /></div>
-            <div><label>Fin (s)</label><input type="number" step="0.1" value={form.end} onChange={set("end")} /></div>
-            <div>
-              <label>Cadrage</label>
-              <select value={form.layout} onChange={set("layout")}>
-                <option value="">auto</option>
-                {(system?.layouts ?? []).filter((l) => l !== "auto").map((l) => <option key={l}>{l}</option>)}
-              </select>
-            </div>
-            <div>
-              <label>Sous-titres</label>
-              <select value={form.subtitle_style} onChange={set("subtitle_style")}>
-                {(system?.subtitle_presets ?? [form.subtitle_style]).map((p) => <option key={p}>{p}</option>)}
-              </select>
-            </div>
+        {/* ---- réglages ---- */}
+        <div className="stack">
+          <div className="tabs">
+            {([["cut", "✂️ Découpe"], ["frame", "🖼 Cadrage"], ["text", "💬 Texte"], ["publish", "📤 Publier"]] as [Tab, string][])
+              .filter(([t]) => !isCompilation || t === "publish" || t === "text")
+              .map(([t, label]) => <button key={t} className={tab === t ? "active" : ""} onClick={() => setTab(t)}>{label}</button>)}
           </div>
-          <div className="field">
-            <label>Position horizontale du crop {form.cropX === "" ? "(automatique)" : `(${Math.round(Number(form.cropX) * 100)} %)`}</label>
-            <div className="row">
-              <input type="range" min={0} max={1} step={0.01} value={form.cropX === "" ? 0.5 : form.cropX} onChange={set("cropX")} style={{ flex: 1 }} />
-              <button className="btn btn-sm" onClick={() => setForm({ ...form, cropX: "" })}>Auto</button>
-            </div>
+
+          {tab === "cut" && !isCompilation && (
+            <section className="card stack">
+              <div className="row spread"><h3>Début et fin</h3><span className="tag mono">{(form.end - form.start).toFixed(1)} s</span></div>
+              <RangeSlider min={winMin} max={Number.isFinite(winMax) ? winMax : form.end + 20} step={0.1} start={form.start} end={form.end}
+                onChange={(s, e) => setForm({ ...form, start: Math.round(s * 10) / 10, end: Math.round(e * 10) / 10 })} />
+              <div className="grid" style={{ gridTemplateColumns: "1fr 1fr" }}>
+                <TimeField label="Début" precise value={form.start} steps={[-1, -0.5, 0.5, 1]}
+                  onChange={(v) => set("start", Math.min(Math.round(v * 10) / 10, form.end - 3))} />
+                <TimeField label="Fin" precise value={form.end} max={video?.duration} steps={[-1, -0.5, 0.5, 1]}
+                  onChange={(v) => set("end", Math.max(Math.round(v * 10) / 10, form.start + 3))} />
+              </div>
+              <p className="hint">Les blancs (pauses calmes) sont coupés automatiquement au rendu.</p>
+            </section>
+          )}
+
+          {tab === "frame" && !isCompilation && (
+            <section className="card stack">
+              <h3>Cadrage vertical</h3>
+              <ChoiceCards value={form.layout} onChange={(v) => set("layout", v)}
+                options={LAYOUTS.filter((l) => !system || l.value === "" || system.layouts.includes(l.value)).map((l) => ({ value: l.value, title: l.title, sub: l.sub, visual: l.ico }))} />
+              {["", "gameplay", "tracking", "split"].includes(form.layout) && (
+                <div>
+                  <div className="row spread">
+                    <span className="label">Position horizontale</span>
+                    <Segmented value={form.cropX == null ? "auto" : "manual"} onChange={(v) => set("cropX", v === "auto" ? null : 0.5)}
+                      options={[{ value: "auto", label: "Auto" }, { value: "manual", label: "Manuel" }]} />
+                  </div>
+                  {form.cropX != null && (
+                    <>
+                      <input className="single-range" type="range" min={0} max={1} step={0.01} value={form.cropX} onChange={(e) => set("cropX", Number(e.target.value))} />
+                      <div className="row spread tiny muted"><span>◀ gauche</span><span>{Math.round(form.cropX * 100)} %</span><span>droite ▶</span></div>
+                    </>
+                  )}
+                </div>
+              )}
+            </section>
+          )}
+
+          {tab === "text" && (
+            <section className="card stack">
+              {!isCompilation && (
+                <div>
+                  <span className="label">Style des sous-titres</span>
+                  <ChoiceCards value={form.style} onChange={(v) => set("style", v)}
+                    options={(system?.subtitle_presets ?? Object.keys(STYLE_CARDS)).map((p) => ({ value: p, title: STYLE_CARDS[p]?.title ?? p, visual: STYLE_CARDS[p]?.preview }))} />
+                </div>
+              )}
+              <div>
+                <span className="label">Hook (accroche des premières secondes)</span>
+                <input className="input" value={form.hook} onChange={(e) => set("hook", e.target.value)} disabled={isCompilation} maxLength={60} />
+                {!!c.hook?.alternatives?.length && !isCompilation && (
+                  <div className="chips" style={{ marginTop: 10 }}>
+                    {c.hook.alternatives.map((alt) => (
+                      <button key={alt} className={`chip ${alt === form.hook ? "active" : ""}`} onClick={() => set("hook", alt)}>{alt}</button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {!isCompilation && (
+                <div>
+                  <span className="label">Durée du hook</span>
+                  <Segmented value={form.hookDur} onChange={(v) => set("hookDur", v)}
+                    options={[{ value: 1.5, label: "1,5 s" }, { value: 2.5, label: "2,5 s" }, { value: 3.5, label: "3,5 s" }]} />
+                </div>
+              )}
+            </section>
+          )}
+
+          {tab === "publish" && (
+            <section className="card stack">
+              <div>
+                <span className="label">Titre</span>
+                <input className="input" value={form.title} onChange={(e) => set("title", e.target.value)} />
+                <div className="chips" style={{ marginTop: 10 }}>
+                  {c.titles.map((t) => <button key={t} className={`chip ${t === form.title ? "active" : ""}`} onClick={() => set("title", t)}>{t}</button>)}
+                </div>
+              </div>
+              <div>
+                <span className="label">Hashtags <span className="muted">({form.tags.length}/10)</span></span>
+                <div className="chips">
+                  {form.tags.map((t) => (
+                    <button key={t} className="chip active" onClick={() => set("tags", form.tags.filter((x) => x !== t))}>{t}<span className="x">✕</span></button>
+                  ))}
+                </div>
+                {form.tags.length < 10 && (
+                  <div className="input-group" style={{ marginTop: 10 }}>
+                    <input className="input" placeholder="#ajouter" value={newTag} onChange={(e) => setNewTag(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && newTag.trim()) {
+                          const tag = "#" + newTag.trim().replace(/^#/, "").replace(/\s+/g, "");
+                          if (!form.tags.includes(tag)) set("tags", [...form.tags, tag]);
+                          setNewTag("");
+                        }
+                      }} />
+                  </div>
+                )}
+              </div>
+              <div>
+                <span className="label">Captions prêtes à copier</span>
+                <div className="stack-sm">
+                  {c.captions.map((cap) => (
+                    <button key={cap} className="card-flat row-nowrap" style={{ border: 0, textAlign: "left", cursor: "pointer" }} onClick={() => copy(cap)}>
+                      <span className="grow small">{cap}</span><span className="tag">📋</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {c.video_url && (
+                <a className="btn btn-block" href={fileUrl(c.video_url)} download>⬇️ Télécharger le MP4</a>
+              )}
+              {c.status === "needs_review" && (
+                <button className="btn btn-sm btn-ghost" onClick={() => exportClip(true)}>Exporter malgré les avertissements</button>
+              )}
+            </section>
+          )}
+
+          {h && tab === "cut" && (
+            <details className="card adv">
+              <summary>🧠 Pourquoi ce moment ?</summary>
+              <div className="stack-sm" style={{ marginTop: 12 }}>
+                <p className="small">{h.reason}</p>
+                {Object.entries(h.components).map(([k, val]) => (
+                  <div key={k} className="comp-row"><span>{k.replace(/_/g, " ")}</span><div className="bar"><span style={{ width: `${Math.round(val * 100)}%` }} /></div><span className="mono">{Math.round(val * 100)}</span></div>
+                ))}
+              </div>
+            </details>
+          )}
+
+          <div className="action-bar">
+            {dirty ? (
+              <button className="btn btn-primary btn-block" disabled={!!busy || rendering} onClick={saveAndRender}>
+                {busy === "render" ? <><Spinner /> Rendu…</> : "💾 Appliquer les changements"}
+              </button>
+            ) : (
+              <>
+                <button className="btn grow" disabled={!!busy} onClick={() => save().then((r) => r && toast("Enregistré"))}>💾 Enregistrer</button>
+                <button className="btn btn-primary grow" disabled={!!busy || rendering || c.status === "rejected"} onClick={() => exportClip(false)}>
+                  {busy === "export" ? <><Spinner /> Export…</> : "📤 Exporter"}
+                </button>
+              </>
+            )}
           </div>
-          <div className="field">
-            <label>Hook (2-3 premières secondes)</label>
-            <input value={form.hook_text} onChange={set("hook_text")} />
-            <div className="chips" style={{ marginTop: 6 }}>
-              {c.hook?.alternatives?.map((alt) => (
-                <button key={alt} className={`chip ${alt === form.hook_text ? "active" : ""}`} onClick={() => setForm({ ...form, hook_text: alt })}>{alt}</button>
-              ))}
-            </div>
-          </div>
-          <div className="field">
-            <label>Titre</label>
-            <input value={form.title} onChange={set("title")} />
-            <div className="chips" style={{ marginTop: 6 }}>
-              {c.titles.map((t) => (
-                <button key={t} className={`chip ${t === form.title ? "active" : ""}`} onClick={() => setForm({ ...form, title: t })}>{t}</button>
-              ))}
-            </div>
-          </div>
-          <div className="field">
-            <label>Hashtags</label>
-            <input value={form.hashtags} onChange={set("hashtags")} />
-          </div>
-          <div className="field">
-            <label>Captions proposées</label>
-            <ul className="list small">{c.captions.map((cap) => <li key={cap}>{cap}</li>)}</ul>
-          </div>
-          <div className="row">
-            <button className="btn" onClick={save} disabled={!!busy}>Enregistrer</button>
-            <button className="btn" onClick={rerender} disabled={!!busy}>{busy === "Rendu en cours…" ? busy : "Enregistrer + rendre"}</button>
-            <button className="btn btn-primary" onClick={() => exportClip(false)} disabled={!!busy}>Exporter</button>
-            {c.status === "needs_review" && <button className="btn btn-sm" onClick={() => exportClip(true)} disabled={!!busy}>Exporter quand même</button>}
-          </div>
+          {dirty && <p className="hint" style={{ textAlign: "center" }}>Modifications non appliquées · {fmtTime(form.start)} → {fmtTime(form.end)}</p>}
         </div>
       </div>
-
-      {h && (
-        <>
-          <h2>Pourquoi ce moment ?</h2>
-          <div className="card">
-            <p style={{ marginTop: 0 }}>{h.reason}</p>
-            <div className="grid" style={{ gap: 6 }}>
-              {Object.entries(h.components).map(([k, val]) => (
-                <div key={k} className="comp-row">
-                  <span>{k}</span>
-                  <div className="bar"><span style={{ width: `${Math.round(val * 100)}%` }} /></div>
-                  <span>{Math.round(val * 100)}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </>
-      )}
-    </>
+    </div>
   );
 }

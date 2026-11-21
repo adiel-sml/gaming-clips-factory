@@ -28,6 +28,10 @@ class VideoCreate(BaseModel):
     auto: Literal["none", "analyze", "pipeline"] = "analyze"
 
 
+class ProbeRequest(BaseModel):
+    source: str
+
+
 class AnalyzeRequest(BaseModel):
     force: bool = False
 

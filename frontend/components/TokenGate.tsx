@@ -36,17 +36,16 @@ export default function TokenGate({ children }: { children: React.ReactNode }) {
     }
   }
 
-  if (state === "checking") return <p className="muted">Connexion…</p>;
+  if (state === "checking") return <div className="skeleton" style={{ height: 120 }} />;
   if (state === "ok") return <>{children}</>;
   return (
-    <form onSubmit={submit} className="card" style={{ maxWidth: 420, margin: "60px auto" }}>
-      <h1>Accès</h1>
-      <p className="muted">Saisissez le jeton d&apos;accès de votre serveur (variable GCF_API_TOKEN).</p>
-      <div className="field">
-        <input type="password" value={value} onChange={(e) => setValue(e.target.value)} autoFocus placeholder="Jeton d'accès" />
-      </div>
-      {error && <div className="error-box">{error}</div>}
-      <button className="btn btn-primary" disabled={!value.trim()}>Entrer</button>
+    <form onSubmit={submit} className="card card-lg stack" style={{ maxWidth: 420, margin: "48px auto" }}>
+      <div className="brand-logo" style={{ width: 48, height: 48, fontSize: "1.3rem" }}>▶</div>
+      <h1 style={{ fontSize: "1.5rem" }}>Accès privé</h1>
+      <p className="muted small">Saisissez le jeton d&apos;accès de votre serveur (variable GCF_API_TOKEN sur Railway).</p>
+      <input className="input" type="password" value={value} onChange={(e) => setValue(e.target.value)} autoFocus placeholder="Jeton d'accès" />
+      {error && <div className="alert alert-error">⚠️ {error}</div>}
+      <button className="btn btn-primary btn-lg" disabled={!value.trim()}>Entrer</button>
     </form>
   );
 }

@@ -1,100 +1,103 @@
 "use client";
 import Link from "next/link";
 import { useCallback } from "react";
-import { CategoryTag, ErrorBox, ScoreBadge, StatCard, StatusPill } from "@/components/ui";
+import { fmtTime } from "@/components/controls";
+import { Alert, CategoryTag, Empty, ScoreRing, StatCard, StatusPill } from "@/components/ui";
 import { usePoll } from "@/hooks/usePoll";
-import { api, fmt, Stats, Video } from "@/lib/api";
+import { api, Stats, Video } from "@/lib/api";
+
+const ACTIVE = ["downloading", "queued", "analyzing"];
 
 export default function Dashboard() {
-  const stats = usePoll<Stats>(api.stats, () => true, 5000);
-  const videos = usePoll<Video[]>(
-    api.videos,
-    useCallback((d?: Video[]) => !!d?.some((v) => ["downloading", "queued", "analyzing"].includes(v.status)), []),
-    3000,
-  );
+  const stats = usePoll<Stats>(api.stats, () => true, 6000);
+  const videos = usePoll<Video[]>(api.videos, useCallback((d?: Video[]) => !!d?.some((v) => ACTIVE.includes(v.status)), []), 3000);
   const s = stats.data;
+  const list = videos.data ?? [];
 
   return (
-    <>
-      <div className="row spread">
-        <div>
-          <h1>Dashboard</h1>
-          <p className="muted">Vue d&apos;ensemble de la production de clips.</p>
+    <div className="stack-lg">
+      <section className="card card-lg hero stack">
+        <span className="eyebrow">GamingClips Factory</span>
+        <h1>Tes meilleurs moments,<br />prêts pour TikTok.</h1>
+        <p className="text-2 small" style={{ maxWidth: 460 }}>Un lien ou un fichier → les moments forts, recadrés en vertical, sous-titrés, avec hook et hashtags.</p>
+        <div className="row" style={{ position: "relative", zIndex: 1 }}>
+          <Link href="/import" className="btn btn-primary btn-lg">✨ Nouvelle vidéo</Link>
+          <Link href="/clips" className="btn btn-lg">Mes clips</Link>
         </div>
-        <Link href="/import" className="btn btn-primary">+ Importer une vidéo</Link>
-      </div>
-      <ErrorBox message={stats.error && `API injoignable : ${stats.error}`} />
+      </section>
+
+      <Alert>{stats.error && `Serveur injoignable : ${stats.error}`}</Alert>
 
       <div className="grid grid-stats">
-        <StatCard label="Vidéos importées" value={s?.videos ?? "–"} />
-        <StatCard label="Clips générés" value={s?.clips_total ?? "–"} />
-        <StatCard label="En attente" value={s?.clips_pending ?? "–"} hint="prêts, à valider" />
+        <StatCard label="Vidéos" value={s?.videos ?? "–"} />
+        <StatCard label="Clips créés" value={s?.clips_total ?? "–"} />
         <StatCard label="À vérifier" value={s?.clips_needs_review ?? "–"} tone={s?.clips_needs_review ? "warn" : undefined} />
-        <StatCard label="Validés" value={s?.clips_validated ?? "–"} tone="good" />
-        <StatCard label="Rejetés" value={s?.clips_rejected ?? "–"} />
-        <StatCard label="Analyse moyenne" value={s ? `${s.avg_analysis_seconds}s` : "–"} hint={s ? `rendu moyen ${s.avg_render_seconds}s` : undefined} />
-        <StatCard label="Erreurs" value={s?.errors.length ?? "–"} tone={s?.errors.length ? "bad" : undefined} />
+        <StatCard label="Validés / exportés" value={s?.clips_validated ?? "–"} tone="good" />
       </div>
 
-      <div className="grid grid-2" style={{ marginTop: 8 }}>
-        <section>
-          <h2>Meilleurs moments</h2>
-          <div className="card">
-            {!s?.best_highlights.length && <p className="muted">Aucun moment détecté pour l&apos;instant.</p>}
-            <ul className="list">
-              {s?.best_highlights.map((h) => (
-                <li key={h.id}>
-                  <Link href={`/videos/${h.video_id}`} className="row">
-                    <ScoreBadge score={h.score} />
-                    <div style={{ minWidth: 0, flex: 1 }}>
-                      <CategoryTag category={h.category} />{" "}
-                      <span className="muted small">{h.start_ts.slice(0, 8)} · {Math.round(h.duration)}s</span>
-                      <div className="small" style={{ marginTop: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{h.transcript}</div>
-                    </div>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </div>
-          {!!s?.errors.length && (
-            <>
-              <h2>Erreurs</h2>
-              <div className="card">
-                <ul className="list">
-                  {s.errors.map((e, i) => (
-                    <li key={i} className="small">
-                      <strong>{e.title ?? e.type ?? e.video_id ?? e.job_id}</strong> — <span className="muted">{e.error}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </>
-          )}
-        </section>
-
-        <section>
-          <h2>Vidéos</h2>
-          <div className="card">
-            {!videos.data?.length && <p className="muted">Aucune vidéo. Commencez par en importer une.</p>}
-            <ul className="list">
-              {videos.data?.map((v) => (
-                <li key={v.id}>
-                  <Link href={`/videos/${v.id}`} className="row spread">
-                    <div style={{ minWidth: 0 }}>
-                      <strong>{v.title ?? v.id}</strong>
-                      <div className="muted small">
-                        {fmt(v.duration)} · {v.width}×{v.height} · {v.highlight_count ?? 0} moments · {v.clip_count ?? 0} clips
-                        {v.game ? ` · ${v.game.toUpperCase()}` : ""}
-                      </div>
-                    </div>
+      <section>
+        <div className="section-title"><h2>Vidéos récentes</h2></div>
+        {!videos.data ? (
+          <div className="stack-sm">{[0, 1].map((i) => <div key={i} className="skeleton" style={{ height: 76 }} />)}</div>
+        ) : list.length === 0 ? (
+          <Empty emoji="🎬" title="Aucune vidéo pour l'instant">
+            <p className="muted small">Importe ton premier stream pour générer des clips.</p>
+            <Link href="/import" className="btn btn-primary">Importer une vidéo</Link>
+          </Empty>
+        ) : (
+          <div className="stack-sm">
+            {list.slice(0, 8).map((v) => {
+              const p = v.stats?.progress;
+              return (
+                <Link key={v.id} href={`/videos/${v.id}`} className="card card-link stack-sm">
+                  <div className="row-nowrap spread">
+                    <strong className="clamp-1 grow">{v.title ?? v.id}</strong>
                     <StatusPill status={v.status} />
-                  </Link>
-                </li>
-              ))}
-            </ul>
+                  </div>
+                  <div className="meta-row tiny muted">
+                    {v.duration ? <span className="mono">⏱ {fmtTime(v.duration)}</span> : null}
+                    <span>· {v.highlight_count ?? 0} moments</span>
+                    <span>· {v.clip_count ?? 0} clips</span>
+                    {v.game && <span>· 🎮 {v.game.toUpperCase()}</span>}
+                  </div>
+                  {ACTIVE.includes(v.status) && (
+                    <div className={`bar ${p?.pct == null ? "indeterminate" : ""}`}><span style={{ width: `${p?.pct ?? 30}%` }} /></div>
+                  )}
+                  {v.status === "failed" && v.error && <p className="tiny" style={{ color: "var(--bad)" }}>{v.error.slice(0, 140)}</p>}
+                </Link>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      {!!s?.best_highlights.length && (
+        <section>
+          <div className="section-title"><h2>🔥 Meilleurs moments</h2></div>
+          <div className="stack-sm">
+            {s.best_highlights.map((h) => (
+              <Link key={h.id} href={`/videos/${h.video_id}`} className="card card-link row-nowrap">
+                <ScoreRing score={h.score} size="sm" />
+                <div className="grow stack-sm" style={{ gap: 4 }}>
+                  <div className="row"><CategoryTag category={h.category} /><span className="tiny muted mono">{(h.source_offset ? h.source_start_ts : h.start_ts)?.slice(0, 8)} · {Math.round(h.duration)} s</span></div>
+                  <p className="small text-2 clamp-1">{h.transcript || h.reason}</p>
+                </div>
+              </Link>
+            ))}
           </div>
         </section>
-      </div>
-    </>
+      )}
+
+      {!!s?.errors.length && (
+        <details className="card adv">
+          <summary>⚠️ {s.errors.length} erreur(s) récente(s)</summary>
+          <ul className="stack-sm small" style={{ margin: "12px 0 0", paddingLeft: 18 }}>
+            {s.errors.map((e, i) => (
+              <li key={i}><strong>{e.title ?? e.type ?? e.video_id ?? e.job_id}</strong> — <span className="muted">{e.error}</span></li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </div>
   );
 }

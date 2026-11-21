@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlmodel import Session, func, select
 
-from app.api.schemas import AnalyzeRequest, ClipPatch, ExportRequest, GenerateRequest, VideoCreate
+from app.api.schemas import AnalyzeRequest, ProbeRequest, ClipPatch, ExportRequest, GenerateRequest, VideoCreate
 from app.core.config import get_settings
 from app.core.db import get_engine, get_session
 from app.core.hardware import detect_hardware
@@ -193,6 +193,28 @@ def _enqueue_auto(db: Session, video: Video, auto: str) -> Optional[dict]:
     return {"id": job.id, "type": job.type, "status": job.status}
 
 
+@app.post("/probe", tags=["vidéos"])
+def probe_source(body: ProbeRequest, db: Session = Depends(get_session)):
+    """Infos d'un lien avant import (titre, durée, miniature) : rien n'est téléchargé."""
+    from urllib.parse import urlparse
+
+    url = body.source.strip()
+    if not url.startswith(("http://", "https://")):
+        raise HTTPException(400, "Collez un lien commençant par https://")
+    host = (urlparse(url).hostname or "").lower()
+    allowed = get_settings().get("ingestion.allowed_url_domains", []) or []
+    if allowed and not any(host == d or host.endswith("." + d) for d in allowed):
+        raise HTTPException(400, f"Site non pris en charge : {host}. Sites acceptés : {', '.join(allowed)}")
+    try:
+        info = VideoIngestionService(db)._probe_url(url)
+    except IngestionError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    platform = next((p for p in ("youtube", "twitch", "vimeo", "kick") if p in host), host)
+    return {"title": info.get("title"), "duration": info.get("duration"), "thumbnail": info.get("thumbnail"),
+            "uploader": info.get("uploader") or info.get("channel"), "platform": platform,
+            "is_live": bool(info.get("is_live"))}
+
+
 @app.post("/videos", status_code=201, tags=["vidéos"])
 def create_video(body: VideoCreate, db: Session = Depends(get_session)):
     """Importe une vidéo (URL autorisée ou fichier serveur), puis lance l'analyse en tâche de fond."""
@@ -220,10 +242,27 @@ def create_video(body: VideoCreate, db: Session = Depends(get_session)):
     return {"video": video_out(video, db), "already_imported": existed, "job": job}
 
 
+def _upload_options(profile: Optional[str], options: Optional[str]) -> Optional[dict]:
+    import json
+
+    from app.api.schemas import VideoOptions
+
+    data: dict = {}
+    if options:
+        try:
+            data = VideoOptions(**json.loads(options)).model_dump(exclude_none=True)
+        except Exception as exc:
+            raise HTTPException(400, f"Options invalides : {exc}") from exc
+    if profile:
+        data["profile"] = profile
+    return data or None
+
+
 @app.post("/videos/upload", status_code=201, tags=["vidéos"])
 def upload_video(file: UploadFile = File(...), rights_confirmed: bool = Form(False), title: Optional[str] = Form(None),
                  auto: str = Form("analyze"), start: Optional[str] = Form(None), end: Optional[str] = Form(None),
-                 profile: Optional[str] = Form(None), db: Session = Depends(get_session)):
+                 profile: Optional[str] = Form(None), options: Optional[str] = Form(None),
+                 db: Session = Depends(get_session)):
     """Envoi d'un fichier vidéo depuis le navigateur."""
     uploads = get_settings().data_dir / "uploads"
     uploads.mkdir(parents=True, exist_ok=True)
@@ -233,7 +272,7 @@ def upload_video(file: UploadFile = File(...), rights_confirmed: bool = Form(Fal
         shutil.copyfileobj(file.file, f)
     try:
         video, existed = VideoIngestionService(db).import_file(dst, title or Path(safe).stem, rights_confirmed,
-                                                               options={"profile": profile} if profile else None,
+                                                               options=_upload_options(profile, options),
                                                                start=start or None, end=end or None)
     except IngestionError as exc:
         dst.unlink(missing_ok=True)
