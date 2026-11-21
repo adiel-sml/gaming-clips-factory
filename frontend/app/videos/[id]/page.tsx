@@ -171,9 +171,9 @@ export default function VideoPage() {
                     <span className={openText[h.id] ? "" : "clamp-2"}>« {h.transcript} »</span>
                   </button>
                 )}
-                {!!h.clips?.length && (
+                {(h.clips?.length ?? 0) > 1 && (
                   <div className="chips">
-                    {h.clips.map((c) => (
+                    {(h.clips ?? []).map((c) => (
                       <Link key={c.id} href={`/clips/${c.id}`} className="chip">
                         {c.variant === "main" ? "🎞 Principal" : c.variant === "alt" ? "🎨 Variante" : c.variant === "compilation" ? "🎬 Compilation" : c.variant}
                         {c.status !== "ready" && <StatusPill status={c.status} />}

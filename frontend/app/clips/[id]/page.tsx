@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { ChoiceCards, RangeSlider, Segmented, TimeField, fmtTime } from "@/components/controls";
 import { useToast } from "@/components/Toast";
@@ -30,6 +30,7 @@ type Form = { start: number; end: number; layout: string; cropX: number | null; 
 export default function ClipEditor() {
   const { id } = useParams<{ id: string }>();
   const toast = useToast();
+  const router = useRouter();
   const clip = usePoll<Clip>(useCallback(() => api.clip(id), [id]), useCallback((c?: Clip) => c?.status === "rendering", []), 2000);
   const [system, setSystem] = useState<SystemInfo>();
   const [video, setVideo] = useState<Video>();
@@ -150,7 +151,23 @@ export default function ClipEditor() {
     if (!c) return;
     const updated = await api.patchClip(c.id, { status });
     clip.setData({ ...c, ...updated });
-    toast(status === "approved" ? "Clip validé" : "Clip rejeté");
+    if (status === "rejected") {
+      toast("Clip écarté (visible dans le filtre « Écartés »)");
+      router.push(`/videos/${c.video_id}`);
+    } else {
+      toast("Clip gardé");
+    }
+  }
+
+  async function remove() {
+    if (!c || !window.confirm("Supprimer définitivement ce clip ?")) return;
+    try {
+      await api.deleteClip(c.id);
+      toast("Clip supprimé");
+      router.push("/clips");
+    } catch (e) {
+      toast((e as Error).message, "err");
+    }
   }
 
   async function copy(text: string) {
@@ -189,6 +206,7 @@ export default function ClipEditor() {
             <button className={`btn ${c.status === "approved" ? "btn-primary" : ""}`} onClick={() => setStatus("approved")} title="Marquer comme bon clip">👍 Je garde</button>
             <button className="btn btn-danger" onClick={() => setStatus("rejected")} title="Écarter ce clip">👎 J&apos;écarte</button>
           </div>
+          <button className="btn btn-ghost btn-sm" onClick={remove}>🗑 Supprimer ce clip</button>
         </div>
 
         {/* ---- réglages ---- */}

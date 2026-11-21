@@ -388,13 +388,47 @@ def reject_highlight(highlight_id: str, db: Session = Depends(get_session)):
 
 # ----------------------------------------------------------------- clips
 @app.get("/clips", tags=["clips"])
-def list_clips(status: Optional[str] = None, video_id: Optional[str] = None, db: Session = Depends(get_session)):
+def list_clips(status: Optional[str] = None, video_id: Optional[str] = None,
+               group: bool = Query(True, description="Une seule carte par moment (version principale)"),
+               db: Session = Depends(get_session)):
+    """Clips récents. Par défaut : sans les clips écartés (sauf status=rejected), une carte par moment."""
     q = select(Clip).order_by(Clip.created_at.desc())
     if status:
         q = q.where(Clip.status == status)
+    else:
+        q = q.where(Clip.status != ClipStatus.REJECTED)
     if video_id:
         q = q.where(Clip.video_id == video_id)
-    return [clip_out(c) for c in db.exec(q).all()]
+    clips = db.exec(q).all()
+    if not group:
+        return [clip_out(c) for c in clips]
+    rank = {"main": 0, "compilation": 0, "alt": 1}
+    by_key: dict[str, list[Clip]] = {}
+    for c in clips:   # la compilation est un clip à part entière ; les variantes d'un moment sont regroupées
+        key = c.id if c.variant == "compilation" else c.highlight_id
+        by_key.setdefault(key, []).append(c)
+    out = []
+    for group_clips in by_key.values():
+        best = sorted(group_clips, key=lambda c: rank.get(c.variant, 2))[0]
+        d = clip_out(best)
+        d["other_variants"] = [c.id for c in group_clips if c.id != best.id]
+        out.append(d)
+    out.sort(key=lambda d: d["created_at"], reverse=True)
+    return out
+
+
+@app.delete("/clips/{clip_id}", tags=["clips"])
+def delete_clip(clip_id: str, db: Session = Depends(get_session)):
+    """Supprime le clip et ses fichiers (libère de la place sur le serveur)."""
+    c = get_or_404(db, Clip, clip_id)
+    if c.file_path:
+        folder = Path(c.file_path).parent
+        out_root = get_settings().output_dir.resolve()
+        if folder.resolve() != out_root and out_root in folder.resolve().parents:
+            shutil.rmtree(folder, ignore_errors=True)
+    db.delete(c)
+    db.commit()
+    return {"deleted": clip_id}
 
 
 @app.get("/clips/{clip_id}", tags=["clips"])

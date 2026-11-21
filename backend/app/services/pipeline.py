@@ -21,7 +21,7 @@ from app.captions.hooks import HookGenerationService
 from app.captions.llm import LLMProvider, build_llm, refine_moments
 from app.captions.metadata import MetadataGenerationService
 from app.clips.composition import VideoCompositionService
-from app.clips.dedup import time_iou
+from app.clips.dedup import contains, time_iou
 from app.clips.selection import ClipSelectionService
 from app.core.config import Settings, get_settings, load_settings
 from app.core.utils import fmt_ts, get_logger, utcnow, write_json
@@ -255,7 +255,8 @@ class PipelineService:
         id_by_index: dict[int, str] = {}
         for rank, c in enumerate(top, 1):
             # un moment qui a déjà des clips est mis à jour plutôt que dupliqué
-            match = next((h for h in reusable if time_iou((h.start, h.end), (c.start, c.end)) > 0.5), None)
+            match = next((h for h in reusable if time_iou((h.start, h.end), (c.start, c.end)) > 0.3
+                          or contains((h.start, h.end), (c.start, c.end))), None)
             fresh = self._to_highlight(video, c, rank)
             if match:
                 for field in ("rank", "peak", "score", "category", "reason", "confidence", "components", "signals"):

@@ -52,6 +52,7 @@ export type Clip = {
   metadata_url: string | null;
   render_seconds: number;
   highlight?: Highlight | null;
+  other_variants?: string[];
 };
 
 export type Highlight = {
@@ -177,6 +178,7 @@ export const api = {
   clips: (status?: string) => request<Clip[]>(`/clips${status ? `?status=${status}` : ""}`),
   clip: (id: string) => request<Clip>(`/clips/${id}`),
   patchClip: (id: string, body: unknown) => request<Clip>(`/clips/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  deleteClip: (id: string) => request<{ deleted: string }>(`/clips/${id}`, { method: "DELETE" }),
   renderClip: (id: string) => request<{ job: Job }>(`/clips/${id}/render`, { method: "POST" }),
   exportClip: (id: string, force = false) =>
     request<{ path: string; clip: Clip }>(`/clips/${id}/export`, { method: "POST", body: JSON.stringify({ force }) }),

@@ -10,7 +10,8 @@ const FILTERS = [
   { value: "", label: "Tous" },
   { value: "ready", label: "Prêts" },
   { value: "needs_review", label: "À vérifier" },
-  { value: "exported", label: "Exportés" },
+  { value: "exported", label: "Enregistrés" },
+  { value: "rejected", label: "Écartés" },
 ];
 
 export default function ClipsPage() {
@@ -45,7 +46,7 @@ export default function ClipsPage() {
                   <div className="thumb">{c.status === "rendering" ? "⏳ Rendu…" : "🎬"}</div>
                 )}
                 <div className="overlay">
-                  <span className="badge">{c.variant === "compilation" ? "🎬 Top" : c.variant === "alt" ? "🎨" : "🎞"}</span>
+                  <span className="badge">{c.variant === "compilation" ? "🎬 Top" : c.other_variants?.length ? `🎞 +${c.other_variants.length}` : "🎞"}</span>
                   <span className="badge mono">{Math.round(c.duration)} s</span>
                 </div>
               </div>

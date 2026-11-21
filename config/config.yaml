@@ -99,7 +99,7 @@ hooks:
   style: default
 
 variants:
-  count: 2                # variantes rendues par clip
+  count: 1                # 1 clip par moment ; mettre 2 pour générer aussi la variante « fond flou »
   # chaque variante surcharge des paramètres du rendu
   definitions:
     - {name: main}

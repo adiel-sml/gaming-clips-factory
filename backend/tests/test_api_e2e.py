@@ -58,8 +58,9 @@ def test_end_to_end_pipeline(fresh_db, synthetic_video, pipeline_factory, settin
         assert settings.get('video.min_clip_duration') - 0.5 <= top.duration <= settings.get('video.max_clip_duration')
         assert db.get(Video, video.id).game == "gta6"
 
-        clips = pipe.generate(top.id)
+        clips = pipe.generate(top.id, ["main", "alt"])
         assert [c.variant for c in clips] == ["main", "alt"]
+        assert [c.variant for c in pipe.generate(top.id)] == ["main"]   # par défaut : un seul clip par moment
         for c in clips:
             assert c.status == "ready", c.qc.get("reasons")
             assert Path(c.file_path).exists() and Path(c.thumbnail_path).exists()
@@ -250,3 +251,21 @@ def test_storage_persistence_check(client, monkeypatch, tmp_path):
     monkeypatch.setenv("RAILWAY_VOLUME_MOUNT_PATH", str(get_settings().data_dir.parent))
     st = client.get("/system").json()["storage"]
     assert st["persistent"] is True and st["free_gb"] >= 0
+
+
+def test_clip_list_grouping_rejected_and_delete(client, synthetic_video):
+    r = client.post("/videos", json={"source": str(synthetic_video), "rights_confirmed": True, "auto": "none"})
+    vid = r.json()["video"]["id"]
+    client.post(f"/videos/{vid}/analyze?sync=true", json={})
+    hl = client.get(f"/videos/{vid}/highlights").json()[0]
+    clips = client.post(f"/highlights/{hl['id']}/generate?sync=true", json={"variants": ["main", "alt"]}).json()["clips"]
+    main, alt = clips[0], clips[1]
+    listed = client.get("/clips").json()
+    assert len(listed) == 1 and listed[0]["id"] == main["id"] and listed[0]["other_variants"] == [alt["id"]]
+    assert len(client.get("/clips?group=false").json()) == 2
+    client.patch(f"/clips/{main['id']}", json={"status": "rejected"})
+    assert [c["id"] for c in client.get("/clips").json()] == [alt["id"]]          # l'écarté disparaît
+    assert [c["id"] for c in client.get("/clips?status=rejected").json()] == [main["id"]]
+    folder = Path(alt["video_url"].replace("/files/", ""))
+    assert client.delete(f"/clips/{alt['id']}").status_code == 200
+    assert client.get(f"/clips/{alt['id']}").status_code == 404
