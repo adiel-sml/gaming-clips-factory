@@ -21,6 +21,7 @@ export type Video = {
     words?: number;
     candidates?: number;
     progress?: { step: string; pct: number | null };
+    picker?: "llm" | "rules";
   };
   highlight_count?: number;
   clip_count?: number;
@@ -45,7 +46,7 @@ export type Clip = {
   hashtags: string[];
   title: string | null;
   status: string;
-  qc: { passed?: boolean; reasons?: string[]; warnings?: string[]; plan?: Record<string, unknown> };
+  qc: { passed?: boolean; reasons?: string[]; warnings?: string[]; plan?: Record<string, unknown>; progress?: string };
   video_url: string | null;
   thumbnail_url: string | null;
   metadata_url: string | null;
@@ -97,6 +98,8 @@ export type SystemInfo = {
   subtitle_presets: string[];
   layouts: string[];
   games: Record<string, string>;
+  profiles: Record<string, string>;
+  llm_picker: boolean;
   defaults: Record<string, string | number>;
   hardware: { cpu_count: number; gpu_available: boolean; gpu_name: string | null };
 };
@@ -156,6 +159,8 @@ export const api = {
   analyze: (id: string, force = false) => request<{ job: Job }>(`/videos/${id}/analyze`, { method: "POST", body: JSON.stringify({ force }) }),
   highlights: (id: string) => request<Highlight[]>(`/videos/${id}/highlights`),
   generate: (id: string) => request<{ job: Job }>(`/highlights/${id}/generate`, { method: "POST", body: "{}" }),
+  compilation: (videoId: string, count = 5, pieceSeconds = 10) =>
+    request<{ job: Job }>(`/videos/${videoId}/compilation?count=${count}&piece_seconds=${pieceSeconds}`, { method: "POST" }),
   rejectHighlight: (id: string) => request<Highlight>(`/highlights/${id}/reject`, { method: "POST" }),
   clips: (status?: string) => request<Clip[]>(`/clips${status ? `?status=${status}` : ""}`),
   clip: (id: string) => request<Clip>(`/clips/${id}`),

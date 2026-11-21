@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 
 class VideoOptions(BaseModel):
+    profile: Optional[str] = Field(None, description="Type de contenu : stream | sport | talk (config/profiles.yaml)")
     max_video_duration: Optional[float] = Field(None, description="N'analyser que les N premières secondes")
     clips_per_video: Optional[int] = Field(None, ge=1, le=50)
     min_clip_duration: Optional[float] = Field(None, ge=5, le=180)

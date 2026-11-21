@@ -1,0 +1,51 @@
+# Profils de contenu : vocabulaire, poids du scoring, durées et consigne donnée à l'IA.
+# Choisi à l'import (champ « Type de contenu ») ; ajouter un profil = ajouter un bloc ici.
+
+stream:
+  label: Stream / gaming
+  description: >-
+    Stream ou vidéo gaming. Moments forts : réaction inattendue du streamer, cri, fou rire, rage,
+    clutch, fail, retournement de situation, action spectaculaire ou rare dans le jeu, phrase culte,
+    interaction drôle avec le chat ou d'autres joueurs.
+  overrides: {}
+
+sport:
+  label: Match / sport
+  description: >-
+    Match ou résumé sportif (football, basket…). Moments forts : but, grosse occasion, frappe,
+    arrêt décisif, geste technique, faute ou carton, penalty, VAR, célébration, bagarre,
+    explosion du public, phrase marquante des commentateurs. Le jeu prime sur les temps morts.
+  lexicon:
+    action: ["\\bbut\\b", "\\bgoal\\b", "\\bgolazo\\b", "\\bfrappe\\b", "\\btir\\b", "\\bshoot\\b", "\\barret\\b",
+             "\\bparade\\b", "\\bsave\\b", "\\bdribble\\b", "\\bpetit pont\\b", "\\bretourne\\w*\\b", "\\bcorner\\b",
+             "\\bcoup franc\\b", "\\bpenalt?y\\b", "\\bpenalty\\b", "\\bcarton (rouge|jaune)\\b", "\\bred card\\b",
+             "\\bvar\\b", "\\bhors.jeu\\b", "\\boffside\\b", "\\bpoteau\\b", "\\bbarre\\b", "\\bcontre.attaque\\b",
+             "\\bdunk\\b", "\\bpanier\\b", "\\btrois points\\b", "\\bbuzzer\\b"]
+    surprise: ["\\bquelle? (frappe|action|parade|occasion|but)\\b", "\\bmagnifique\\b", "\\bsplendide\\b",
+               "\\bquel geste\\b", "\\bwhat a (goal|save|strike|shot)\\b", "\\bunbelievable\\b", "\\bremarquable\\b"]
+    victory: ["\\bvictoire\\b", "\\bqualifi\\w*\\b", "\\bchampions?\\b", "\\begalisation\\b", "\\begalise\\b",
+              "\\bwinner\\b", "\\bequali[sz]er\\b"]
+    defeat: ["\\belimin\\w*\\b", "\\brate\\b", "\\bmanque\\b", "\\bmiss(ed)?\\b", "\\bcontre son camp\\b", "\\bown goal\\b"]
+  overrides:
+    scoring:
+      weights: {audio_intensity: 1.8, surprise: 2.0, action_intensity: 1.6, visual_interest: 1.2,
+                emotional_intensity: 1.4, humor: 0.4, quotability: 0.5, context_independence: 0.8, replayability: 1.2}
+    video: {min_clip_duration: 10, max_clip_duration: 35, target_clip_duration: 20}
+
+talk:
+  label: Émission / podcast / YouTubeur
+  description: >-
+    Émission, podcast, interview ou vidéo de YouTubeur. Moments forts : punchline, fou rire,
+    anecdote incroyable, révélation, clash ou débat tendu, conseil marquant, phrase citable,
+    réaction exagérée. Le clip doit se comprendre seul et finir sur la chute.
+  lexicon:
+    humor: ["\\bje suis mort\\b", "\\bmais t'es (fou|serieux)\\b", "\\bc'est une dinguerie\\b", "\\bbro\\b"]
+    surprise: ["\\bje vous jure\\b", "\\bpersonne (ne )?(le )?sait\\b", "\\bla verite\\b", "\\bsecret\\b",
+               "\\bje vais vous (dire|raconter)\\b", "\\bhonnetement\\b", "\\bimagine\\b", "\\bplot twist\\b"]
+    anger: ["\\bn'importe quoi\\b", "\\bc'est faux\\b", "\\barrete\\b", "\\btu mens\\b"]
+  overrides:
+    scoring:
+      weights: {humor: 2.0, quotability: 2.0, context_independence: 1.6, emotional_intensity: 1.4, surprise: 1.6,
+                audio_intensity: 0.9, action_intensity: 0.3, visual_interest: 0.3, replayability: 0.8}
+    video: {min_clip_duration: 15, max_clip_duration: 50, target_clip_duration: 30}
+    composition: {layout: tracking}

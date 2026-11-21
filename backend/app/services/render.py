@@ -28,11 +28,19 @@ class RenderService:
         return 60 if src_fps >= 50 else 30
 
     def render(self, src: Path, start: float, end: float, plan: CompositionPlan, out_path: Path,
-               ass_path: Path | None, has_audio: bool, src_fps: float) -> float:
+               ass_path: Path | None, has_audio: bool, src_fps: float,
+               keep: list[tuple[float, float]] | None = None) -> float:
+        """`keep` : plages (relatives au début du clip) à conserver ; le reste (blancs) est coupé."""
         out_path.parent.mkdir(parents=True, exist_ok=True)
         fps = self.output_fps(src_fps)
         graph = plan.filter
         tail = "[vcomp]"
+        cut = ""
+        if keep:
+            expr = "+".join(f"between(t,{a:.3f},{b:.3f})" for a, b in keep)
+            graph += f";[vcomp]select='{expr}',setpts=N/FRAME_RATE/TB[vcut]"
+            tail = "[vcut]"
+            cut = f"aselect='{expr}',asetpts=N/SR/TB,"
         if ass_path is not None:
             graph += f";{tail}ass=filename='{_escape_filter_path(ass_path)}'[vsub]"
             tail = "[vsub]"
@@ -41,7 +49,7 @@ class RenderService:
             af = "aresample=48000"
             if self.s.get("output.loudnorm", True):
                 af = "loudnorm=I=-14:TP=-1.5:LRA=11," + af
-            graph += f";[0:a]{af}[aout]"
+            graph += f";[0:a]{cut}{af}[aout]"
         script = out_path.with_suffix(".filter.txt")
         script.write_text(graph)
 

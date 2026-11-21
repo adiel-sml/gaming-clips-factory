@@ -19,7 +19,7 @@ import numpy as np
 
 from app.core.config import Settings, get_settings
 from app.scoring.games import GameDetector
-from app.scoring.lexicon import EMOTION_CATEGORIES, find_hits, normalize
+from app.scoring.lexicon import EMOTION_CATEGORIES, build_lexicon, find_hits, normalize
 from app.transcription.base import Transcript
 from app.video.analysis import AnalysisResult
 
@@ -106,6 +106,7 @@ class HighlightDetectionService:
     def __init__(self, settings: Settings | None = None, game_detector: GameDetector | None = None):
         self.s = settings or get_settings()
         self.games = game_detector or GameDetector(self.s)
+        self.lexicon = build_lexicon(self.s.profile().get("lexicon") or {})
 
     # -- signaux ---------------------------------------------------------
     def build_signals(self, analysis: AnalysisResult, transcript: Transcript) -> dict[str, np.ndarray]:
@@ -140,7 +141,7 @@ class HighlightDetectionService:
         sig["motion_var"] = np.clip(smooth(np.abs(np.diff(motion, prepend=motion[:1])), 4) / (motion.std() + 1e-3), 0, 1)
 
         words = transcript.words
-        hits = find_hits(words)
+        hits = find_hits(words, self.lexicon)
         for cat in ("surprise", "humor", "anger", "victory", "defeat", "action", "rare"):
             cat_hits = [h for h in hits if h.category == cat]
             sig[f"text_{cat}"] = gaussian_spread(

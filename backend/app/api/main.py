@@ -122,8 +122,11 @@ def highlight_out(h: Highlight, db: Session | None = None, offset: float | None 
 
 def clip_out(c: Clip) -> dict:
     d = c.model_dump()
+    segments = (c.crop or {}).get("segments")
+    duration = sum(b - a for a, b in segments) if segments else c.end - c.start
+    metrics = (c.qc or {}).get("metrics") or {}
     d.update(video_url=file_url(c.file_path), thumbnail_url=file_url(c.thumbnail_path),
-             metadata_url=file_url(c.metadata_path), duration=round(c.end - c.start, 2))
+             metadata_url=file_url(c.metadata_path), duration=round(metrics.get("duration") or duration, 2))
     return d
 
 
@@ -146,6 +149,8 @@ def system():
     return {"hardware": detect_hardware().to_dict(), "subtitle_presets": list(s.subtitle_presets().keys()),
             "layouts": ["auto", "gameplay", "streamer", "split", "webcam_overlay", "tracking", "blur_fit"],
             "games": {k: v.get("name", k) for k, v in s.games().items()},
+            "profiles": {k: v.get("label", k) for k, v in s.profiles().items()},
+            "llm_picker": bool(os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")),
             "defaults": {"min_clip_duration": s.get("video.min_clip_duration"),
                          "max_clip_duration": s.get("video.max_clip_duration"),
                          "clips_per_video": s.get("video.clips_per_video"),
@@ -218,7 +223,7 @@ def create_video(body: VideoCreate, db: Session = Depends(get_session)):
 @app.post("/videos/upload", status_code=201, tags=["vidéos"])
 def upload_video(file: UploadFile = File(...), rights_confirmed: bool = Form(False), title: Optional[str] = Form(None),
                  auto: str = Form("analyze"), start: Optional[str] = Form(None), end: Optional[str] = Form(None),
-                 db: Session = Depends(get_session)):
+                 profile: Optional[str] = Form(None), db: Session = Depends(get_session)):
     """Envoi d'un fichier vidéo depuis le navigateur."""
     uploads = get_settings().data_dir / "uploads"
     uploads.mkdir(parents=True, exist_ok=True)
@@ -228,6 +233,7 @@ def upload_video(file: UploadFile = File(...), rights_confirmed: bool = Form(Fal
         shutil.copyfileobj(file.file, f)
     try:
         video, existed = VideoIngestionService(db).import_file(dst, title or Path(safe).stem, rights_confirmed,
+                                                               options={"profile": profile} if profile else None,
                                                                start=start or None, end=end or None)
     except IngestionError as exc:
         dst.unlink(missing_ok=True)
@@ -273,6 +279,21 @@ def run_pipeline(video_id: str, request: Request, sync: bool = False, top_n: Opt
     if sync:
         return pipeline(request, db).run_full(video_id, top_n=top_n)
     return {"job": queue().enqueue(db, "pipeline", video_id, {"top_n": top_n}).model_dump()}
+
+
+@app.post("/videos/{video_id}/compilation", tags=["vidéos"])
+def create_compilation(video_id: str, request: Request, count: int = Query(5, ge=2, le=15),
+                       piece_seconds: float = Query(10, ge=4, le=30), sync: bool = False,
+                       db: Session = Depends(get_session)):
+    """Une vidéo avec les N meilleurs passages courts mis bout à bout."""
+    get_or_404(db, Video, video_id)
+    if sync:
+        try:
+            return {"clip": clip_out(pipeline(request, db).generate_compilation(video_id, count, piece_seconds))}
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+    job = queue().enqueue(db, "compilation", video_id, {"count": count, "piece_seconds": piece_seconds}, dedupe=False)
+    return {"job": job.model_dump()}
 
 
 @app.get("/videos/{video_id}/highlights", tags=["moments"])

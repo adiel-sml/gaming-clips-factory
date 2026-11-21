@@ -104,6 +104,17 @@ class Settings(DotDict):
         path = CONFIG_DIR / "subtitle_presets.yaml"
         return yaml.safe_load(path.read_text()) if path.exists() else {}
 
+    def profiles(self) -> dict[str, dict]:
+        path = CONFIG_DIR / "profiles.yaml"
+        return yaml.safe_load(path.read_text()) if path.exists() else {}
+
+    def profile(self) -> dict:
+        """Profil de contenu actif (stream, sport, talk…) avec son nom."""
+        name = self.get("content.profile", "stream") or "stream"
+        profiles = self.profiles()
+        data = profiles.get(name) or profiles.get("stream") or {}
+        return {"name": name if name in profiles else "stream", **data}
+
     def games(self) -> dict[str, dict]:
         path = CONFIG_DIR / "games.json"
         return json.loads(path.read_text()) if path.exists() else {}

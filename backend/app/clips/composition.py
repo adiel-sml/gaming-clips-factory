@@ -166,8 +166,9 @@ class VideoCompositionService:
     def _blur_fit(self, src_w: int, src_h: int) -> CompositionPlan:
         fg_h = _even(OUT_W * src_h / src_w)
         f = (f"[0:v]split=2[bgsrc][fgsrc];"
-             f"[bgsrc]scale={OUT_W}:{OUT_H}:force_original_aspect_ratio=increase,crop={OUT_W}:{OUT_H},"
-             f"boxblur=luma_radius=30:luma_power=2,eq=brightness=-0.08[bg];"
+             # fond flouté calculé en petit (270x480) puis agrandi : même rendu, ~10x moins de calcul
+             f"[bgsrc]scale=270:480:force_original_aspect_ratio=increase,crop=270:480,"
+             f"boxblur=luma_radius=8:luma_power=2,scale={OUT_W}:{OUT_H},eq=brightness=-0.08[bg];"
              f"[fgsrc]scale={OUT_W}:{fg_h}[fg];"
              f"[bg][fg]overlay=0:(H-h)/2,setsar=1[vcomp]")
         bottom_of_fg = (OUT_H + fg_h) / 2 / OUT_H

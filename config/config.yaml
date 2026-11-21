@@ -18,12 +18,13 @@ ingestion:
   # retenus en HD au moment du rendu (beaucoup plus léger) ; "full" = toute la vidéo en HD
   url_mode: proxy
   proxy_height: 360
+  hd_segment_timeout: 300 # au-delà, le clip est rendu depuis la version légère
   max_video_duration: 14400   # 4 h
 
 video:
-  min_clip_duration: 15
-  max_clip_duration: 60
-  target_clip_duration: 35
+  min_clip_duration: 12
+  max_clip_duration: 45
+  target_clip_duration: 25
   clips_per_video: 10
 
 analysis:
@@ -58,9 +59,12 @@ scoring:
     normal: 40
     aggressive: 25
   peak_min_distance: 20   # secondes entre deux pics candidats
-  context_before: [3, 10]
-  context_after: [2, 8]
+  context_before: [2, 7]
+  context_after: [1.5, 5]
   use_llm: auto           # auto (si clé API dispo) | true | false
+  picker: auto            # auto : l'IA choisit les moments si une clé API est configurée, sinon règles | llm | rules
+  llm_window: 720         # l'IA lit la transcription par fenêtres de 12 min
+  llm_min_score: 7        # note minimale (0-10) pour garder un moment
   llm_top_k: 15           # nombre de candidats envoyés au LLM
 
 dedup:
@@ -75,6 +79,12 @@ composition:
   face_detector: haar     # haar | none
   split_top_ratio: 0.36   # part de la hauteur pour la webcam en split screen
   tracking_smoothing: 0.85
+
+clips:
+  trim_silences: true     # coupe les blancs (pauses de parole ET son calme) : clips plus rythmés
+  min_pause: 0.7
+  pause_padding: 0.15
+  quiet_margin_db: 8      # une pause n'est coupée que si le son y est 8 dB sous la médiane du clip
 
 subtitles:
   enabled: true
@@ -97,7 +107,7 @@ variants:
 
 output:
   resolution: 1080x1920
-  fps: auto               # auto (30 ou 60 selon la source) | 30 | 60
+  fps: 30                 # 30 suffit pour TikTok/Shorts/Reels et rend 2x plus vite ; auto = 60 si la source l'est
   video_codec: auto       # auto (nvenc si dispo) | libx264 | h264_nvenc
   preset: veryfast
   crf: 21

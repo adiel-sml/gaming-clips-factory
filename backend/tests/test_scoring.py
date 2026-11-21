@@ -82,10 +82,12 @@ def test_bounds_include_context_and_respect_durations(settings):
     sel = ClipSelectionService(settings)
     c = _cand(61, 60, 66)
     start, end = sel.compute_bounds(c, TRANSCRIPT, analysis)
-    assert 15 <= end - start <= 60
-    assert 60 - start >= 3, "pas assez de contexte avant l'événement"
-    assert 60 - start <= 12
-    assert end >= 66 + 2, "la réaction doit avoir une conclusion"
+    lo, hi = settings.get("video.min_clip_duration"), settings.get("video.max_clip_duration")
+    cb_min, cb_max = settings.get("scoring.context_before")
+    assert lo <= end - start <= hi
+    assert 60 - start >= cb_min, "pas assez de contexte avant l'événement"
+    assert 60 - start <= cb_max + 2
+    assert end >= 66 + settings.get("scoring.context_after")[0], "la réaction doit avoir une conclusion"
     words = TRANSCRIPT.words
     assert not any(w.start < start < w.end for w in words), "début coupé au milieu d'un mot"
     assert not any(w.start < end < w.end for w in words), "fin coupée au milieu d'un mot"
@@ -101,7 +103,7 @@ def test_bounds_start_on_natural_sentence_start(settings):
 def test_bounds_clamped_at_video_edges(settings):
     analysis = fake_analysis(duration=30)
     start, end = ClipSelectionService(settings).compute_bounds(_cand(2, 1, 3), make_transcript([(1, "oh non !")]), analysis)
-    assert start >= 0 and end <= 30 and end - start >= 15
+    assert start >= 0 and end <= 30 and end - start >= settings.get("video.min_clip_duration")
 
 
 def test_max_duration_enforced():

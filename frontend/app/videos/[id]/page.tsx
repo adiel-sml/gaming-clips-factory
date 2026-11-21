@@ -43,6 +43,20 @@ export default function VideoPage() {
     highlights.reload();
   }
 
+  async function compilation() {
+    setBusy((b) => ({ ...b, compilation: "Compilation en cours…" }));
+    setError(undefined);
+    try {
+      const { job } = await api.compilation(id, 5, 10);
+      const done = await waitForJob(job, (j) => setBusy((b) => ({ ...b, compilation: j.status === "running" ? "Rendu de la compilation…" : "En file…" })));
+      if (done.status === "failed") setError(done.error?.split("\n")[0] ?? "Échec de la compilation");
+      else if (done.status === "done") window.location.href = `/clips/${(done as unknown as { result: { clip: string } }).result.clip}`;
+    } catch (e) {
+      setError((e as Error).message);
+    }
+    setBusy((b) => ({ ...b, compilation: "" }));
+  }
+
   async function reanalyze() {
     await api.analyze(id, true);
     video.reload();
@@ -116,7 +130,21 @@ export default function VideoPage() {
         </div>
       )}
 
-      <h2>Meilleurs moments ({highlights.data?.length ?? 0})</h2>
+      <div className="row spread" style={{ marginTop: 28 }}>
+        <h2 style={{ margin: 0 }}>Meilleurs moments ({highlights.data?.length ?? 0})</h2>
+        {(highlights.data?.length ?? 0) >= 2 && (
+          <button className="btn btn-sm" disabled={!!busy.compilation} onClick={compilation}>
+            {busy.compilation || "🎬 Compilation des meilleurs passages"}
+          </button>
+        )}
+      </div>
+      {v?.stats?.picker && (
+        <p className="muted small">
+          {v.stats.picker === "llm"
+            ? "Moments choisis par l'IA (note sévère de 0 à 10 sur la transcription annotée)."
+            : "Moments choisis par les règles automatiques. Ajoutez une clé ANTHROPIC_API_KEY sur le serveur pour un choix par l'IA, bien plus pertinent."}
+        </p>
+      )}
       {v?.status === "analyzed" && !highlights.data?.length && <p className="muted">Aucun moment au-dessus du seuil. Essayez le scoring « agressif ».</p>}
       <div className="grid grid-cards">
         {highlights.data?.map((h) => {

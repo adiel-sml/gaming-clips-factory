@@ -231,6 +231,7 @@ Documentation interactive générée automatiquement : `http://localhost:8000/do
 | GET | `/videos/{id}/source` | vidéo source (preview) |
 | POST | `/videos/{id}/analyze` | analyse (file d'attente, ou `?sync=true`) |
 | POST | `/videos/{id}/pipeline` | pipeline complet |
+| POST | `/videos/{id}/compilation` | compilation des meilleurs passages (`count`, `piece_seconds`) |
 | GET | `/videos/{id}/highlights` | moments triés par score |
 | POST | `/highlights/{id}/generate` | génère les clips du moment |
 | POST | `/highlights/{id}/reject` | rejette un moment |
@@ -250,6 +251,25 @@ curl -X PATCH localhost:8000/clips/<clip_id> -H 'Content-Type: application/json'
 curl -X POST localhost:8000/clips/<clip_id>/render
 curl -X POST localhost:8000/clips/<clip_id>/export -d '{}' -H 'Content-Type: application/json'
 ```
+
+**Choix des moments par l'IA (recommandé).** Avec une clé `ANTHROPIC_API_KEY` sur le serveur, l'IA lit
+la transcription annotée des signaux mesurés (`<<FORT +12 dB>>`, `<<CALME → EXPLOSION>>`,
+`<<ACTION À L'ÉCRAN>>`, sons forts sans parole), par fenêtres de 12 min. Elle note chaque moment de 0 à 10
+de façon sévère et ne garde que ceux à 7 ou plus, avec des bornes serrées, un hook et une raison. Le coût
+est de quelques centimes par heure de vidéo. Sans clé, ou en cas d'erreur, ce sont les règles automatiques
+qui choisissent.
+
+**Types de contenu** (`config/profiles.yaml`) : `stream` (gaming), `sport` (buts, arrêts, cartons,
+explosion du public…) et `talk` (émission, podcast, YouTubeur : punchlines, rires, révélations). Chaque
+profil a son vocabulaire, ses poids de scoring, ses durées et sa consigne pour l'IA. ⚠️ Les images de
+matchs officiels sont protégées par les ligues et les diffuseurs.
+
+**Clips plus nerveux.** Les durées par défaut sont de 12 à 45 s (environ 25 s visées). Les **blancs** sont
+coupés en jump cuts : uniquement les pauses de parole où le son est aussi calme, jamais une explosion ni
+le public.
+
+**Compilation.** Le bouton « Compilation » ou `clips compilation <video_id> --count 5 --piece 10` crée
+une vidéo avec les meilleurs passages courts mis bout à bout, le meilleur en premier.
 
 **Liens : analyse légère, HD à la demande** (`ingestion.url_mode: proxy`, par défaut). Pour une URL, on
 télécharge une version 360p avec l'audio (environ 10× plus légère), qui sert à l'analyse et à l'aperçu.
@@ -318,7 +338,7 @@ le résultat du contrôle qualité et un bloc `performance`, que l'on remplit vi
 
 ```bash
 cd backend
-pytest                    # 76 tests : lexique, scoring, sélection, contexte, dédup, sous-titres,
+pytest                    # 83 tests : lexique, scoring, sélection, contexte, dédup, sous-titres,
                           # 6 cadrages rendus, QC, ingestion, file d'attente, API, LLM simulé, end-to-end,
                           # + vraie transcription faster-whisper (modèle tiny, ignorée si absente)
 pytest -m "not slow"      # sans le test qui télécharge un modèle Whisper

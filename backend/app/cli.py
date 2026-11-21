@@ -59,9 +59,9 @@ def _resolve_video(session, ref: str, confirm_rights: bool, title: str | None = 
     return video
 
 
-def _options(min_d, max_d, clips, lang, style, aggr, layout) -> dict:
+def _options(min_d, max_d, clips, lang, style, aggr, layout, profile=None) -> dict:
     opts = {"min_clip_duration": min_d, "max_clip_duration": max_d, "clips_per_video": clips, "language": lang,
-            "subtitle_style": style, "aggressiveness": aggr, "layout": layout}
+            "subtitle_style": style, "aggressiveness": aggr, "layout": layout, "profile": profile}
     return {k: v for k, v in opts.items() if v is not None}
 
 
@@ -161,13 +161,14 @@ def pipeline(video: str, confirm_rights: bool = ConfirmOpt, top: Optional[int] =
              max_duration: Optional[float] = None, language: Optional[str] = None,
              style: Optional[str] = typer.Option(None, help="Preset de sous-titres"),
              aggressiveness: Optional[str] = None, layout: Optional[str] = None,
-             start: Optional[str] = FromOpt, end: Optional[str] = ToOpt):
+             start: Optional[str] = FromOpt, end: Optional[str] = ToOpt,
+             profile: Optional[str] = typer.Option(None, help="Type de contenu : stream | sport | talk")):
     """Tout le pipeline : import → analyse → clips → QC → export."""
     from app.services.pipeline import PipelineService
 
     with session_scope() as db:
         v = _resolve_video(db, video, confirm_rights, start=start, end=end,
-                           options=_options(min_duration, max_duration, clips, language, style, aggressiveness, layout))
+                           options=_options(min_duration, max_duration, clips, language, style, aggressiveness, layout, profile))
         result = PipelineService(db).run_full(v.id, top_n=top, force=force)
         for cid in result["clips"]:
             _print_clip(db.get(Clip, cid))
@@ -214,6 +215,16 @@ def batch(file: Path, confirm_rights: bool = ConfirmOpt, now: bool = typer.Optio
     _out(summary)
     if not now:
         typer.echo("Lancez `clips worker` pour traiter la file.")
+
+
+@app.command()
+def compilation(video_id: str, count: int = typer.Option(5, help="Nombre de passages"),
+                piece: float = typer.Option(10, help="Durée de chaque passage (s)")):
+    """Crée une vidéo avec les meilleurs passages courts mis bout à bout."""
+    from app.services.pipeline import PipelineService
+
+    with session_scope() as db:
+        _print_clip(PipelineService(db).generate_compilation(video_id, count, piece))
 
 
 @app.command()

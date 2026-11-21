@@ -103,6 +103,25 @@ class ClipSelectionService:
         end = min(end, dur_total, start + max_d)
         return round(max(0.0, start), 2), round(end, 2)
 
+    def finalize_bounds(self, start: float, end: float, transcript: Transcript,
+                        analysis: AnalysisResult) -> tuple[float, float]:
+        """Bornes proposées par l'IA : jamais au milieu d'un mot, durée dans [min, max] du profil."""
+        min_d = float(self.s.get("video.min_clip_duration", 12))
+        max_d = float(self.s.get("video.max_clip_duration", 45))
+        words = transcript.words
+        total = analysis.duration
+        start, end = max(0.0, start), min(total, end)
+        if end - start < min_d:                 # trop court : on prolonge surtout la fin (la chute)
+            missing = min_d - (end - start)
+            end = min(total, end + missing * 0.7)
+            start = max(0.0, end - min_d)
+        if end - start > max_d:
+            ends_ok = [t for t in self.natural_ends(words) if start + min_d <= t <= start + max_d]
+            end = max(ends_ok) + 0.2 if ends_ok else start + max_d
+        start = self.snap_out_of_words(start, words, "start")
+        end = min(total, self.snap_out_of_words(end, words, "end"), start + max_d)
+        return round(start, 2), round(end, 2)
+
     # -------------------------------------------------------------- sélection
     def select(self, candidates: list[MomentCandidate], transcript: Transcript, analysis: AnalysisResult,
                top_n: int | None = None) -> list[MomentCandidate]:

@@ -114,6 +114,9 @@ class JobQueue:
             elif job.type == "generate":
                 clips = pipe.generate(job.target_id, p.get("variants"))
                 result = {"clips": [c.id for c in clips]}
+            elif job.type == "compilation":
+                clip = pipe.generate_compilation(job.target_id, int(p.get("count", 5)), float(p.get("piece_seconds", 10)))
+                result = {"clip": clip.id}
             elif job.type == "render":
                 result = {"clip": pipe.render_clip(job.target_id).id}
             elif job.type == "pipeline":

@@ -13,7 +13,7 @@ export default function ImportPage() {
   const [mode, setMode] = useState<"analyze" | "pipeline">("analyze");
   const [range, setRange] = useState({ start: "", end: "" });
   const [opts, setOpts] = useState({
-    max_video_duration: "", clips_per_video: "10", min_clip_duration: "15", max_clip_duration: "60",
+    profile: "stream", max_video_duration: "", clips_per_video: "10", min_clip_duration: "", max_clip_duration: "",
     language: "auto", subtitle_style: "gaming", aggressiveness: "normal",
   });
   const [busy, setBusy] = useState(false);
@@ -38,6 +38,7 @@ export default function ImportPage() {
         form.append("file", file);
         form.append("rights_confirmed", "true");
         form.append("auto", mode);
+        form.append("profile", opts.profile);
         if (range.start) form.append("start", range.start);
         if (range.end) form.append("end", range.end);
         res = await api.uploadVideo(form);
@@ -50,6 +51,7 @@ export default function ImportPage() {
           start: range.start || undefined,
           end: range.end || undefined,
           options: {
+            profile: opts.profile,
             max_video_duration: num(opts.max_video_duration),
             clips_per_video: num(opts.clips_per_video),
             min_clip_duration: num(opts.min_clip_duration),
@@ -97,11 +99,31 @@ export default function ImportPage() {
         </div>
 
         <h2>Options</h2>
+        <div className="field">
+          <label>Type de contenu</label>
+          <select value={opts.profile} onChange={set("profile")}>
+            {Object.entries(system?.profiles ?? { stream: "Stream / gaming", sport: "Match / sport", talk: "Émission / podcast / YouTubeur" }).map(([k, label]) => (
+              <option key={k} value={k}>{label}</option>
+            ))}
+          </select>
+          {opts.profile === "sport" && (
+            <p className="muted small">
+              ⚠️ Les images de matchs officiels appartiennent aux ligues et diffuseurs : elles sont presque toujours
+              bloquées (Content ID). Utilisez des matchs dont vous avez les droits (amateur, votre club, accord du diffuseur).
+            </p>
+          )}
+          {system && !system.llm_picker && (
+            <p className="muted small">
+              Astuce : ajoutez une clé ANTHROPIC_API_KEY sur le serveur pour que l&apos;IA choisisse les moments (bien meilleur
+              résultat, quelques centimes par heure de vidéo).
+            </p>
+          )}
+        </div>
         <div className="fields">
           <div><label>Durée max analysée (s)</label><input type="number" min={0} placeholder="tout" value={opts.max_video_duration} onChange={set("max_video_duration")} /></div>
           <div><label>Nombre de clips</label><input type="number" min={1} max={50} value={opts.clips_per_video} onChange={set("clips_per_video")} /></div>
-          <div><label>Durée min (s)</label><input type="number" min={5} max={180} value={opts.min_clip_duration} onChange={set("min_clip_duration")} /></div>
-          <div><label>Durée max (s)</label><input type="number" min={5} max={180} value={opts.max_clip_duration} onChange={set("max_clip_duration")} /></div>
+          <div><label>Durée min (s)</label><input type="number" min={5} max={180} placeholder="selon le type" value={opts.min_clip_duration} onChange={set("min_clip_duration")} /></div>
+          <div><label>Durée max (s)</label><input type="number" min={5} max={180} placeholder="selon le type" value={opts.max_clip_duration} onChange={set("max_clip_duration")} /></div>
           <div>
             <label>Langue</label>
             <select value={opts.language} onChange={set("language")}>

@@ -55,7 +55,7 @@ def test_end_to_end_pipeline(fresh_db, synthetic_video, pipeline_factory, settin
         top = highlights[0]
         assert top.start <= 20.5 <= top.end, "le clip doit contenir l'événement"
         assert top.start <= 17.5, "contexte avant l'événement"
-        assert 15 <= top.duration <= 60
+        assert settings.get('video.min_clip_duration') - 0.5 <= top.duration <= settings.get('video.max_clip_duration')
         assert db.get(Video, video.id).game == "gta6"
 
         clips = pipe.generate(top.id)

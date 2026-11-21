@@ -108,7 +108,9 @@ export default function ClipEditor() {
 
       <div className="grid grid-2">
         <div>
-          {c.video_url ? (
+          {c.status === "rendering" ? (
+            <div className="player thumb">⏳ {c.qc?.progress ?? "Rendu en cours"}…</div>
+          ) : c.video_url ? (
             <video key={c.video_url + c.render_seconds} className="player" src={fileUrl(c.video_url, c.render_seconds)} controls playsInline />
           ) : (
             <div className="player thumb">Pas encore rendu</div>

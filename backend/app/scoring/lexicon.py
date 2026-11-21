@@ -53,6 +53,16 @@ _COMPILED = {cat: [re.compile(p) for p in pats] for cat, pats in LEXICON.items()
 EMOTION_CATEGORIES = ("surprise", "humor", "anger", "victory", "defeat")
 
 
+def build_lexicon(extra: dict[str, list[str]] | None = None) -> dict[str, list[re.Pattern]]:
+    """Lexique de base + vocabulaire propre au profil de contenu (sport, émission…)."""
+    if not extra:
+        return _COMPILED
+    out = {cat: list(pats) for cat, pats in _COMPILED.items()}
+    for cat, patterns in extra.items():
+        out.setdefault(cat, []).extend(re.compile(p) for p in patterns)
+    return out
+
+
 def normalize(text: str) -> str:
     text = unicodedata.normalize("NFKD", text.lower())
     text = "".join(c for c in text if not unicodedata.combining(c))
