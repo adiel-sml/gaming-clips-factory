@@ -97,6 +97,10 @@ class QualityControlService:
                             "Pas d'image noire" if black_total <= 1.0 and not black_start
                             else f"Images noires : {black_total:.1f}s" + (" dès le début" if black_start else "")))
 
+        if str(plan.get("hd_source", "")).startswith("fallback"):
+            checks.append(Check("hd_source", False, "Passage HD indisponible : clip rendu depuis la version légère "
+                                "(qualité réduite). Relancez le rendu plus tard.", blocking=False))
+
         # cadrage
         face_ratio = plan.get("face_inside_ratio")
         if face_ratio is not None:

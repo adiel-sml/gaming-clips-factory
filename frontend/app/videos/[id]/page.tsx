@@ -67,7 +67,8 @@ export default function VideoPage() {
           <div>
             <h1>{v.title ?? v.id}</h1>
             <p className="muted">
-              {v.duration ? `${fmt(v.duration)} · ${v.width}×${v.height} · ${v.fps} fps` : "en attente du fichier"}{v.game ? ` · jeu détecté : ${v.game.toUpperCase()}` : ""}
+              {v.duration ? `${fmt(v.duration)} · ${v.width}×${v.height} · ${v.fps} fps` : "en attente du fichier"}
+              {v.options?.remote_hd ? " (version légère pour l'analyse · clips rendus en HD)" : ""}{v.game ? ` · jeu détecté : ${v.game.toUpperCase()}` : ""}
               {v.language ? ` · langue : ${v.language}` : ""}
               {v.stats?.analysis_timings?.total ? ` · analysé en ${v.stats.analysis_timings.total}s` : ""}
             </p>

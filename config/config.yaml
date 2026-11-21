@@ -14,6 +14,10 @@ ingestion:
   require_rights_confirmation: true
   allowed_url_domains: [youtube.com, youtu.be, twitch.tv, vimeo.com]
   max_download_height: 1080
+  # liens : "proxy" = on télécharge une version légère pour l'analyse, puis seulement les passages
+  # retenus en HD au moment du rendu (beaucoup plus léger) ; "full" = toute la vidéo en HD
+  url_mode: proxy
+  proxy_height: 360
   max_video_duration: 14400   # 4 h
 
 video:

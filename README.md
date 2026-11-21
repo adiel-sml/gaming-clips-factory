@@ -251,6 +251,12 @@ curl -X POST localhost:8000/clips/<clip_id>/render
 curl -X POST localhost:8000/clips/<clip_id>/export -d '{}' -H 'Content-Type: application/json'
 ```
 
+**Liens : analyse légère, HD à la demande** (`ingestion.url_mode: proxy`, par défaut). Pour une URL, on
+télécharge une version 360p avec l'audio (environ 10× plus légère), qui sert à l'analyse et à l'aperçu.
+Au rendu, seul le passage du clip (avec 5 s de marge) est téléchargé en HD, puis gardé en cache pour les
+re-rendus. Si la HD est indisponible, le clip est rendu depuis la version légère, avec un avertissement.
+`url_mode: full` rétablit le téléchargement complet en HD.
+
 **Longs streams : importer un extrait.** Indiquez une plage début/fin (formats `6:00:00`, `6h`, `6h30`,
 `90m`, `45s` ou en secondes). Pour une URL, yt-dlp ne télécharge que cette plage. Pour un fichier,
 l'extrait est copié sans ré-encodage. Les moments affichent aussi leur heure dans la vidéo d'origine
@@ -312,7 +318,7 @@ le résultat du contrôle qualité et un bloc `performance`, que l'on remplit vi
 
 ```bash
 cd backend
-pytest                    # 68 tests : lexique, scoring, sélection, contexte, dédup, sous-titres,
+pytest                    # 76 tests : lexique, scoring, sélection, contexte, dédup, sous-titres,
                           # 6 cadrages rendus, QC, ingestion, file d'attente, API, LLM simulé, end-to-end,
                           # + vraie transcription faster-whisper (modèle tiny, ignorée si absente)
 pytest -m "not slow"      # sans le test qui télécharge un modèle Whisper

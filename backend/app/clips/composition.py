@@ -60,7 +60,9 @@ class VideoCompositionService:
     # ------------------------------------------------------------------ décision
     def plan(self, video: Path, src_w: int, src_h: int, start: float, end: float,
              analysis: AnalysisResult | None = None, layout: str | None = None,
-             crop_override: dict | None = None) -> CompositionPlan:
+             crop_override: dict | None = None, time_offset: float = 0.0) -> CompositionPlan:
+        """`start`/`end` : temps dans la vidéo analysée. `time_offset` : instant de cette timeline où
+        commence le fichier `video` (passage HD téléchargé à part) ; 0 si c'est la vidéo entière."""
         layout = (layout or self.s.get("composition.layout", "auto")).lower()
         crop_override = crop_override or {}
         if crop_override.get("layout"):
@@ -74,7 +76,7 @@ class VideoCompositionService:
 
         track: FaceTrack | None = None
         if self.detector is not None and layout in ("auto", "split", "streamer", "tracking", "webcam_overlay"):
-            track = track_faces(self.detector, video, start, end, samples=10)
+            track = track_faces(self.detector, video, start - time_offset, end - time_offset, samples=10)
 
         if layout == "auto":
             layout, webcam = self._auto_layout(track, webcam)

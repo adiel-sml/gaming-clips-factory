@@ -64,7 +64,7 @@ def test_url_section_only_downloads_the_range(fresh_db, synthetic_video, monkeyp
     calls = {}
     monkeypatch.setattr(VideoIngestionService, "_probe_url", lambda self, url: {"duration": 36000, "title": "Stream 10h"})
 
-    def fake_download(self, url, out_dir, video, section=None):
+    def fake_download(self, url, out_dir, video, section=None, **kw):
         calls["section"] = section
         dst = out_dir / "source.mp4"
         shutil.copy(synthetic_video, dst)
@@ -132,7 +132,7 @@ def test_api_url_import_is_async(fresh_db, synthetic_video, monkeypatch, pipelin
 
     monkeypatch.setattr(VideoIngestionService, "_probe_url", lambda self, url: {"duration": 36000, "title": "VOD"})
 
-    def slow_download(self, url, out_dir, video, section=None):
+    def slow_download(self, url, out_dir, video, section=None, **kw):
         assert section == (16200, 19800)
         dst = out_dir / "source.mp4"
         shutil.copy(synthetic_video, dst)

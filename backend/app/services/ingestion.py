@@ -186,9 +186,15 @@ class VideoIngestionService:
         """Étape longue : télécharge (seulement la plage demandée) puis finalise la vidéo."""
         o = video.options or {}
         section = (o.get("section_requested_start", o["section_start"]), o["section_end"]) if "section_start" in o else None
+        proxy = self.s.get("ingestion.url_mode", "proxy") == "proxy"
         try:
-            path = self._download(video.source_url, self.video_dir(video.id), video, section)
+            path = self._download(video.source_url, self.video_dir(video.id), video, section,
+                                  quality="proxy" if proxy else "full")
             video.file_hash = file_fingerprint(path)
+            if proxy:
+                # analyse et aperçu sur la version légère ; la HD n'est récupérée qu'au rendu, clip par clip
+                video.options = {**(video.options or {}), "remote_hd": True,
+                                 "proxy_height": int(self.s.get("ingestion.proxy_height", 360))}
             return self._finalize(video, path)
         except Exception as exc:
             self.db.rollback()
@@ -218,15 +224,23 @@ class VideoIngestionService:
         except Exception as exc:
             raise _download_error(exc, "Vidéo inaccessible") from exc
 
-    def _download(self, url: str, out_dir: Path, video: Video, section: tuple[float, float] | None = None) -> Path:
+    def _download(self, url: str, out_dir: Path, video: Video, section: tuple[float, float] | None = None,
+                  quality: str = "full", name: str = "source") -> Path:
+        """yt-dlp sans contournement. quality="proxy" : petite résolution (analyse) ; "full" : HD (rendu)."""
         try:
             import yt_dlp
         except ImportError as exc:
             raise IngestionError("yt-dlp n'est pas installé (pip install yt-dlp).") from exc
-        h = int(self.s.get("ingestion.max_download_height", 1080))
+        if quality == "proxy":
+            h = int(self.s.get("ingestion.proxy_height", 360))
+            fmt = f"bv*[height<={h}]+ba/b[height<={h}]/wv*+ba/w"
+        else:
+            h = int(self.s.get("ingestion.max_download_height", 1080))
+            fmt = f"bv*[height<={h}][ext=mp4]+ba[ext=m4a]/b[height<={h}][ext=mp4]/bv*[height<={h}]+ba/b"
+        out_dir.mkdir(parents=True, exist_ok=True)
         opts = {
-            "format": f"bv*[height<={h}][ext=mp4]+ba[ext=m4a]/b[height<={h}][ext=mp4]/bv*[height<={h}]+ba/b",
-            "outtmpl": str(out_dir / "source.%(ext)s"),
+            "format": fmt,
+            "outtmpl": str(out_dir / f"{name}.%(ext)s"),
             "merge_output_format": "mp4",
             "noplaylist": True,
             "quiet": True,
@@ -234,7 +248,7 @@ class VideoIngestionService:
             "restrictfilenames": True,
         }
         if section:
-            # ne télécharge que la plage demandée (1 h au lieu de 10 h)
+            # ne télécharge que la plage demandée (1 h au lieu de 10 h, ou 1 min pour un clip)
             from yt_dlp.utils import download_range_func
 
             opts["download_ranges"] = download_range_func(None, [section])
@@ -245,8 +259,38 @@ class VideoIngestionService:
         except Exception as exc:  # yt_dlp.utils.DownloadError & co
             raise _download_error(exc, "Téléchargement impossible") from exc
         video.title = video.title or info.get("title")
-        candidates = sorted(out_dir.glob("source.*"), key=lambda p: p.stat().st_size, reverse=True)
+        candidates = sorted(out_dir.glob(f"{name}.*"), key=lambda p: p.stat().st_size, reverse=True)
         candidates = [p for p in candidates if p.suffix not in (".part", ".ytdl", ".json")]
         if not candidates:
             raise IngestionError("Téléchargement terminé mais fichier introuvable.")
         return candidates[0]
+
+    # ------------------------------------------------------------------ HD à la demande
+    SEGMENT_PAD = 5.0
+
+    def fetch_hd_segment(self, video: Video, start: float, end: float) -> tuple[Path, float]:
+        """Télécharge (ou réutilise) le passage HD couvrant [start, end] (temps de la vidéo importée).
+
+        Retourne (fichier, début du fichier dans la timeline de la vidéo). Une marge de 5 s de chaque côté
+        permet de petits ajustements dans l'éditeur sans retélécharger."""
+        seg_dir = self.video_dir(video.id) / "segments"
+        seg_dir.mkdir(parents=True, exist_ok=True)
+        for f in seg_dir.glob("hd_*.mp4"):          # cache : un passage déjà téléchargé qui couvre le clip
+            try:
+                a, b = (float(x) for x in f.stem[3:].split("_"))
+            except ValueError:
+                continue
+            if a <= start + 0.05 and end - 0.05 <= b:
+                return f, a
+        seg_start = max(0.0, start - self.SEGMENT_PAD)
+        seg_end = min(video.duration or end + self.SEGMENT_PAD, end + self.SEGMENT_PAD)
+        o = video.options or {}
+        origin = float(o.get("section_requested_start", o.get("section_start", 0.0)))
+        name = f"hd_{seg_start:.2f}_{seg_end:.2f}"
+        path = self._download(video.source_url, seg_dir, video, (origin + seg_start, origin + seg_end),
+                              quality="full", name=name)
+        if path.suffix != ".mp4":
+            final = path.with_suffix(".mp4")
+            path.rename(final)
+            path = final
+        return path, seg_start

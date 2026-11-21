@@ -312,7 +312,17 @@ class PipelineService:
         s = settings_for(video, self.base)
         if analysis is None or transcript is None:
             analysis, transcript = self.load_cached(video)
-        src = Path(video.file_path)
+        src, offset, hd_source = Path(video.file_path), 0.0, "file"
+        if (video.options or {}).get("remote_hd"):
+            from app.services.ingestion import VideoIngestionService
+
+            try:
+                src, offset = VideoIngestionService(self.db, s).fetch_hd_segment(video, clip.start, clip.end)
+                hd_source = "segment"
+            except Exception as exc:  # HD indisponible : on rend depuis la version légère, avec avertissement
+                log.warning("Passage HD indisponible pour %s : %s", clip.id, exc)
+                hd_source = f"fallback: {str(exc)[:200]}"
+        src_info = ffmpeg.probe(src)
         out_dir = s.output_dir / video.id / clip.id
         out_dir.mkdir(parents=True, exist_ok=True)
         clip.status = ClipStatus.RENDERING
@@ -320,8 +330,9 @@ class PipelineService:
         self.db.commit()
         try:
             composer = VideoCompositionService(s, face_detector=self.face_detector)
-            plan = composer.plan(src, video.width, video.height, clip.start, clip.end, analysis,
-                                 layout=clip.layout, crop_override=clip.crop)
+            plan = composer.plan(src, src_info.width, src_info.height, clip.start, clip.end, analysis,
+                                 layout=clip.layout, crop_override=clip.crop, time_offset=offset)
+            plan.details["hd_source"] = hd_source
             duration = clip.end - clip.start
             rel_words = [Word(round(w.start - clip.start, 3), round(w.end - clip.start, 3), w.text, w.prob)
                          for w in transcript.words_between(clip.start, clip.end)]
@@ -340,8 +351,8 @@ class PipelineService:
             needs_ass = sub_enabled or bool(hook.get("text"))
 
             mp4 = out_dir / "clip.mp4"
-            render_s = RenderService(s).render(src, clip.start, clip.end, plan, mp4, ass_path if needs_ass else None,
-                                               video.has_audio, video.fps)
+            render_s = RenderService(s).render(src, clip.start - offset, clip.end - offset, plan, mp4,
+                                               ass_path if needs_ass else None, src_info.has_audio, src_info.fps)
             thumb = ffmpeg.extract_frame(mp4, min(max(0.0, hl.peak - clip.start), max(0.0, duration - 0.5)),
                                          out_dir / "thumbnail.jpg", width=540)
             qc = QualityControlService(s).check(mp4, subs.events, plan.to_dict(),
