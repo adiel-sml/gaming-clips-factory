@@ -104,6 +104,8 @@ def test_api_full_flow(client, synthetic_video):
     assert clip["subtitle_style"] == "clean"  # option d'import appliquée
     assert clip["video_url"].startswith("/files/") and client.get(clip["video_url"]).status_code == 200
 
+    dl = client.get(f"/clips/{clip['id']}/download")
+    assert dl.status_code == 200 and "attachment" in dl.headers["content-disposition"] and dl.headers["content-type"] == "video/mp4"
     r = client.patch(f"/clips/{clip['id']}", json={"hook_text": "ATTENDS LA FIN", "start": hls[0]["start"] + 1, "title": "Mon titre"})
     assert r.status_code == 200 and r.json()["status"] == "pending"
     r = client.patch(f"/clips/{clip['id']}", json={"subtitle_style": "inexistant"})

@@ -6,7 +6,7 @@ import { ChoiceCards, RangeSlider, Segmented, TimeField, fmtTime } from "@/compo
 import { useToast } from "@/components/Toast";
 import { Alert, CategoryTag, ScoreRing, Spinner, StatusPill } from "@/components/ui";
 import { usePoll, waitForJob } from "@/hooks/usePoll";
-import { api, Clip, fileUrl, SystemInfo, Video } from "@/lib/api";
+import { api, Clip, downloadUrl, fileUrl, getToken, SystemInfo, Video } from "@/lib/api";
 
 type Tab = "cut" | "frame" | "text" | "publish";
 
@@ -37,6 +37,8 @@ export default function ClipEditor() {
   const [tab, setTab] = useState<Tab>("cut");
   const [busy, setBusy] = useState("");
   const [newTag, setNewTag] = useState("");
+  const [shareFile, setShareFile] = useState<File | null>(null);
+  const [savedText, setSavedText] = useState(false);
   const c = clip.data;
 
   useEffect(() => { api.system().then(setSystem).catch(() => {}); }, []);
@@ -49,6 +51,38 @@ export default function ClipEditor() {
       });
     }
   }, [c, form]);
+
+  // Le menu de partage iPhone exige que le fichier soit déjà en mémoire au moment du toucher :
+  // on le précharge dès que le clip est prêt.
+  const readyKey = c && ["ready", "needs_review", "approved", "exported"].includes(c.status) && c.video_url ? `${c.id}-${c.render_seconds}` : "";
+  useEffect(() => {
+    if (!readyKey || !c) return;
+    let cancelled = false;
+    setShareFile(null);
+    const token = getToken();
+    fetch(downloadUrl(c.id), { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+      .then((r) => (r.ok ? r.blob() : Promise.reject()))
+      .then((blob) => {
+        if (!cancelled) setShareFile(new File([blob], `${(c.title || "clip").replace(/[^\w\- ]+/g, "").trim().slice(0, 40) || "clip"}.mp4`, { type: "video/mp4" }));
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [readyKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // titre et hashtags : sauvegarde automatique (pas besoin de bouton)
+  useEffect(() => {
+    if (!c || !form) return;
+    if (form.title === (c.title ?? "") && JSON.stringify(form.tags) === JSON.stringify(c.hashtags)) return;
+    const t = setTimeout(async () => {
+      try {
+        const updated = await api.patchClip(c.id, { title: form.title, hashtags: form.tags });
+        clip.setData({ ...c, title: updated.title, hashtags: updated.hashtags });
+        setSavedText(true);
+        setTimeout(() => setSavedText(false), 1500);
+      } catch { /* réessayé à la prochaine modification */ }
+    }, 700);
+    return () => clearTimeout(t);
+  }, [form?.title, form?.tags]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (c && c.variant === "compilation" && (tab === "cut" || tab === "frame")) setTab("publish");
   if (!c || !form) return clip.error ? <Alert>{clip.error}</Alert> : <div className="skeleton" style={{ height: 420 }} />;
@@ -95,18 +129,21 @@ export default function ClipEditor() {
     setBusy("");
   }
 
-  async function exportClip(force = false) {
+  async function saveVideo() {
     if (!c) return;
-    setBusy("export");
+    const nav = navigator as Navigator & { canShare?: (d: ShareData) => boolean };
     try {
-      await save();
-      const res = await api.exportClip(c.id, force);
-      clip.setData({ ...c, ...res.clip });
-      toast("Exporté : prêt à publier");
+      if (shareFile && nav.canShare?.({ files: [shareFile] })) {
+        // iPhone / Android : menu de partage → « Enregistrer la vidéo » (Photos), TikTok, Instagram…
+        await nav.share({ files: [shareFile], title: c.title ?? "Clip" });
+      } else {
+        window.location.href = downloadUrl(c.id);  // ordinateur : téléchargement classique
+      }
+      api.exportClip(c.id, true).then((r) => clip.setData({ ...c, status: r.clip.status })).catch(() => {});
     } catch (e) {
-      toast((e as Error).message, "err");
+      if ((e as Error).name !== "AbortError") toast("Impossible d'ouvrir le partage : téléchargement direct", "err");
+      if ((e as Error).name !== "AbortError") window.location.href = downloadUrl(c.id);
     }
-    setBusy("");
   }
 
   async function setStatus(status: "approved" | "rejected") {
@@ -149,8 +186,8 @@ export default function ClipEditor() {
           {!!c.qc?.reasons?.length && <Alert kind="warn">{c.qc.reasons.join(" · ")}</Alert>}
           {!!c.qc?.warnings?.length && <Alert kind="info">{c.qc.warnings.join(" · ")}</Alert>}
           <div className="grid" style={{ gridTemplateColumns: "1fr 1fr" }}>
-            <button className="btn" onClick={() => setStatus("approved")}>👍 Valider</button>
-            <button className="btn btn-danger" onClick={() => setStatus("rejected")}>👎 Rejeter</button>
+            <button className={`btn ${c.status === "approved" ? "btn-primary" : ""}`} onClick={() => setStatus("approved")} title="Marquer comme bon clip">👍 Je garde</button>
+            <button className="btn btn-danger" onClick={() => setStatus("rejected")} title="Écarter ce clip">👎 J&apos;écarte</button>
           </div>
         </div>
 
@@ -240,7 +277,7 @@ export default function ClipEditor() {
                 </div>
               </div>
               <div>
-                <span className="label">Hashtags <span className="muted">({form.tags.length}/10)</span></span>
+                <span className="label">Hashtags <span className="muted">({form.tags.length}/10) · touchez pour retirer</span></span>
                 <div className="chips">
                   {form.tags.map((t) => (
                     <button key={t} className="chip active" onClick={() => set("tags", form.tags.filter((x) => x !== t))}>{t}<span className="x">✕</span></button>
@@ -269,12 +306,7 @@ export default function ClipEditor() {
                   ))}
                 </div>
               </div>
-              {c.video_url && (
-                <a className="btn btn-block" href={fileUrl(c.video_url)} download>⬇️ Télécharger le MP4</a>
-              )}
-              {c.status === "needs_review" && (
-                <button className="btn btn-sm btn-ghost" onClick={() => exportClip(true)}>Exporter malgré les avertissements</button>
-              )}
+              {savedText && <p className="hint">✓ Titre et hashtags enregistrés</p>}
             </section>
           )}
 
@@ -293,18 +325,23 @@ export default function ClipEditor() {
           <div className="action-bar">
             {dirty ? (
               <button className="btn btn-primary btn-block" disabled={!!busy || rendering} onClick={saveAndRender}>
-                {busy === "render" ? <><Spinner /> Rendu…</> : "💾 Appliquer les changements"}
+                {busy === "render" ? <><Spinner /> Rendu…</> : "✨ Appliquer les changements"}
               </button>
             ) : (
               <>
-                <button className="btn grow" disabled={!!busy} onClick={() => save().then((r) => r && toast("Enregistré"))}>💾 Enregistrer</button>
-                <button className="btn btn-primary grow" disabled={!!busy || rendering || c.status === "rejected"} onClick={() => exportClip(false)}>
-                  {busy === "export" ? <><Spinner /> Export…</> : "📤 Exporter"}
+                <button className="btn btn-primary grow" disabled={rendering || !c.video_url} onClick={saveVideo}>
+                  {rendering ? <><Spinner /> Rendu…</> : "📥 Enregistrer la vidéo"}
                 </button>
+                {!!c.captions.length && (
+                  <button className="btn icon-btn" title="Copier la légende" onClick={() => copy(c.captions[0])}>📋</button>
+                )}
               </>
             )}
           </div>
-          {dirty && <p className="hint" style={{ textAlign: "center" }}>Modifications non appliquées · {fmtTime(form.start)} → {fmtTime(form.end)}</p>}
+          <p className="hint" style={{ textAlign: "center" }}>
+            {dirty ? `Modifications à appliquer · ${fmtTime(form.start)} → ${fmtTime(form.end)}`
+              : "Sur iPhone : choisissez « Enregistrer la vidéo » dans le menu pour l'ajouter à Photos. 📋 copie la légende."}
+          </p>
         </div>
       </div>
     </div>

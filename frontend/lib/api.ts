@@ -182,6 +182,9 @@ export const api = {
   job: (id: string) => request<Job>(`/jobs/${id}`),
 };
 
+/** MP4 d'un clip en pièce jointe (téléchargement direct). */
+export const downloadUrl = (clipId: string) => fileUrl(`/clips/${clipId}/download`) as string;
+
 /** URL d'un média de l'API (balises <video>/<img> : le jeton passe en paramètre). */
 export const fileUrl = (path: string | null | undefined, bust?: string | number) => {
   if (!path) return undefined;

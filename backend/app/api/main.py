@@ -433,6 +433,21 @@ def update_clip(clip_id: str, body: ClipPatch, db: Session = Depends(get_session
     return clip_out(c)
 
 
+@app.get("/clips/{clip_id}/download", tags=["clips"])
+def download_clip(clip_id: str, db: Session = Depends(get_session)):
+    """Le MP4 en pièce jointe (Content-Disposition: attachment) : téléchargement direct, y compris sur iPhone."""
+    from app.services.pipeline import slugify
+
+    c = get_or_404(db, Clip, clip_id)
+    if not c.file_path or not Path(c.file_path).exists():
+        raise HTTPException(404, "Clip pas encore rendu")
+    import unicodedata
+
+    base = unicodedata.normalize("NFKD", c.title or c.hook.get("text") or "clip").encode("ascii", "ignore").decode()
+    name = f"{slugify(base) or 'clip'}.mp4"   # nom ASCII : compris par tous les navigateurs
+    return FileResponse(c.file_path, media_type="video/mp4", filename=name)
+
+
 @app.post("/clips/{clip_id}/render", tags=["clips"])
 def render_clip(clip_id: str, request: Request, sync: bool = False, db: Session = Depends(get_session)):
     get_or_404(db, Clip, clip_id)
