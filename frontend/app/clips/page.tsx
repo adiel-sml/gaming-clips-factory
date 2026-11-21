@@ -6,17 +6,23 @@ import { Alert, Empty, StatusPill } from "@/components/ui";
 import { usePoll } from "@/hooks/usePoll";
 import { api, Clip, fileUrl } from "@/lib/api";
 
+// chaque filtre regroupe un ou plusieurs statuts du serveur
 const FILTERS = [
-  { value: "", label: "Tous" },
-  { value: "ready", label: "Prêts" },
-  { value: "needs_review", label: "À vérifier" },
+  { value: "ready,approved,rendering,pending", label: "Prêts" },
+  { value: "needs_review,failed", label: "À vérifier" },
   { value: "exported", label: "Enregistrés" },
   { value: "rejected", label: "Écartés" },
 ];
+const EMPTY: Record<string, string> = {
+  "ready,approved,rendering,pending": "Aucun clip prêt à publier.",
+  "needs_review,failed": "Rien à vérifier 👌",
+  exported: "Aucun clip enregistré pour l'instant.",
+  rejected: "Aucun clip écarté.",
+};
 
 export default function ClipsPage() {
-  const [filter, setFilter] = useState("");
-  const clips = usePoll<Clip[]>(useCallback(() => api.clips(filter || undefined), [filter]),
+  const [filter, setFilter] = useState(FILTERS[0].value);
+  const clips = usePoll<Clip[]>(useCallback(() => api.clips(filter), [filter]),
     useCallback((d?: Clip[]) => !!d?.some((c) => c.status === "rendering"), []), 4000);
 
   return (
@@ -30,7 +36,7 @@ export default function ClipsPage() {
       {!clips.data ? (
         <div className="grid grid-clips">{[0, 1, 2, 3].map((i) => <div key={i} className="skeleton" style={{ aspectRatio: "9/16" }} />)}</div>
       ) : clips.data.length === 0 ? (
-        <Empty emoji="📭" title="Aucun clip ici">
+        <Empty emoji="📭" title={EMPTY[filter] ?? "Aucun clip ici"}>
           <p className="muted small">Analyse une vidéo puis crée des clips à partir de ses moments forts.</p>
           <Link href="/import" className="btn btn-primary">Nouvelle vidéo</Link>
         </Empty>

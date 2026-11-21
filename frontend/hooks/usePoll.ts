@@ -18,9 +18,11 @@ export function usePoll<T>(loader: () => Promise<T>, active: (data: T | undefine
     }
   }, []);
 
+  // recharge à l'ouverture ET quand la source change (ex. changement de filtre)
   useEffect(() => {
+    setData(undefined);
     reload();
-  }, [reload]);
+  }, [loader, reload]);
 
   useEffect(() => {
     if (!active(data)) return;

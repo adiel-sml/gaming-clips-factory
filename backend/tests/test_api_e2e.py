@@ -266,6 +266,7 @@ def test_clip_list_grouping_rejected_and_delete(client, synthetic_video):
     client.patch(f"/clips/{main['id']}", json={"status": "rejected"})
     assert [c["id"] for c in client.get("/clips").json()] == [alt["id"]]          # l'écarté disparaît
     assert [c["id"] for c in client.get("/clips?status=rejected").json()] == [main["id"]]
+    assert [c["id"] for c in client.get("/clips?status=ready,approved").json()] == [alt["id"]]
     folder = Path(alt["video_url"].replace("/files/", ""))
     assert client.delete(f"/clips/{alt['id']}").status_code == 200
     assert client.get(f"/clips/{alt['id']}").status_code == 404

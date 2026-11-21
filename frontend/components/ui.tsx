@@ -33,8 +33,8 @@ export function ScoreRing({ score, size }: { score: number; size?: "sm" }) {
 
 const STATUS_FR: Record<string, string> = {
   downloading: "Téléchargement", imported: "Importée", queued: "En file", analyzing: "Analyse", analyzed: "Analysée",
-  failed: "Échec", pending: "À rendre", rendering: "Rendu", ready: "Prêt", needs_review: "À vérifier", approved: "Validé",
-  rejected: "Rejeté", exported: "Exporté", candidate: "Candidat", generated: "Généré", duplicate: "Doublon",
+  failed: "Échec", pending: "À rendre", rendering: "Rendu", ready: "Prêt", needs_review: "À vérifier", approved: "Gardé",
+  rejected: "Écarté", exported: "Enregistré", candidate: "Candidat", generated: "Généré", duplicate: "Doublon",
   running: "En cours", done: "Terminé",
 };
 

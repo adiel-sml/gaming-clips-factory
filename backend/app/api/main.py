@@ -393,8 +393,8 @@ def list_clips(status: Optional[str] = None, video_id: Optional[str] = None,
                db: Session = Depends(get_session)):
     """Clips récents. Par défaut : sans les clips écartés (sauf status=rejected), une carte par moment."""
     q = select(Clip).order_by(Clip.created_at.desc())
-    if status:
-        q = q.where(Clip.status == status)
+    if status:   # un ou plusieurs statuts : ?status=ready,approved
+        q = q.where(Clip.status.in_([x.strip() for x in status.split(",") if x.strip()]))
     else:
         q = q.where(Clip.status != ClipStatus.REJECTED)
     if video_id:

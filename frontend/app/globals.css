@@ -152,7 +152,7 @@ textarea.input { min-height: 90px; resize: vertical; }
 
 /* segmented control */
 .segmented { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 4px; padding: 4px; background: var(--bg-2); border: 1px solid var(--border); border-radius: 14px; }
-.segmented button { min-height: 40px; border: 0; background: transparent; color: var(--muted); border-radius: 10px; cursor: pointer; font-weight: 650; font-size: 0.9rem; padding: 0 8px; transition: background 0.15s, color 0.15s; }
+.segmented button { min-height: 40px; border: 0; background: transparent; color: var(--muted); border-radius: 10px; cursor: pointer; font-weight: 650; font-size: 0.9rem; padding: 0 6px; white-space: nowrap; transition: background 0.15s, color 0.15s; }
 .segmented button.active { background: var(--panel-3); color: var(--text); box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset; }
 
 /* chips */
@@ -304,3 +304,4 @@ details.adv[open] summary::after { content: "－"; }
   .timefield-box button { width: 34px; font-size: 0.72rem; }
   .timefield-box input { font-size: 0.98rem; }
 }
+@media (max-width: 420px) { .segmented button { font-size: 0.8rem; padding: 0 4px; } }
