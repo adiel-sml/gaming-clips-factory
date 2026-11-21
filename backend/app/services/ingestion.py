@@ -173,6 +173,8 @@ class VideoIngestionService:
             return existing, True
         video = existing or Video(source_type="url", source_url=url, title=title or info.get("title"),
                                   rights_note=rights_note, options=options or {})
+        if total:
+            video.options = {**(video.options or {}), "source_duration": total}
         if not existing:
             self._apply_section(video, section)
         video.status, video.error = VideoStatus.DOWNLOADING, None
@@ -183,13 +185,19 @@ class VideoIngestionService:
         return video, False
 
     def download_url(self, video: Video) -> Video:
-        """Étape longue : télécharge (seulement la plage demandée) puis finalise la vidéo."""
+        """Étape longue : récupère la plage demandée. En mode « proxy », les morceaux déjà téléchargés
+        pour ce lien sont réutilisés : seuls les passages jamais récupérés sont téléchargés."""
         o = video.options or {}
         section = (o.get("section_requested_start", o["section_start"]), o["section_end"]) if "section_start" in o else None
         proxy = self.s.get("ingestion.url_mode", "proxy") == "proxy"
         try:
-            path = self._download(video.source_url, self.video_dir(video.id), video, section,
-                                  quality="proxy" if proxy else "full")
+            if proxy and (section or o.get("source_duration")):
+                a, b = section or (0.0, float(o["source_duration"]))
+                path, stats = self._assemble_proxy(video, float(a), float(b))
+                video.stats = {**(video.stats or {}), "download": stats}
+            else:
+                path = self._download(video.source_url, self.video_dir(video.id), video, section,
+                                      quality="proxy" if proxy else "full")
             video.file_hash = file_fingerprint(path)
             if proxy:
                 # analyse et aperçu sur la version légère ; la HD n'est récupérée qu'au rendu, clip par clip
@@ -203,6 +211,86 @@ class VideoIngestionService:
             self.db.add(video)
             self.db.commit()
             raise
+
+    # ------------------------------------------------------------------ mémoire des téléchargements par lien
+    def source_dir(self, url: str) -> Path:
+        import hashlib
+
+        d = self.s.data_dir / "sources" / hashlib.sha1(url.encode()).hexdigest()[:16]
+        d.mkdir(parents=True, exist_ok=True)
+        return d
+
+    @staticmethod
+    def _cached(folder: Path, prefix: str) -> list[tuple[float, float, Path]]:
+        """Morceaux en cache : fichiers « <prefix>_<début>_<fin>.* » (temps absolus dans la vidéo d'origine)."""
+        out = []
+        if not folder.exists():
+            return out
+        for f in folder.glob(f"{prefix}_*"):
+            if f.suffix in (".part", ".ytdl", ".json", ".txt"):
+                continue
+            try:
+                a, b = (float(x) for x in f.stem[len(prefix) + 1:].split("_"))
+            except ValueError:
+                continue
+            out.append((a, b, f))
+        return sorted(out, key=lambda x: x[0])
+
+    def cached_ranges(self, url: str) -> list[tuple[float, float]]:
+        """Plages déjà téléchargées (version légère) pour ce lien, fusionnées."""
+        merged: list[list[float]] = []
+        for a, b, _ in self._cached(self.source_dir(url) / "proxy", "seg"):
+            if merged and a <= merged[-1][1] + 1:
+                merged[-1][1] = max(merged[-1][1], b)
+            else:
+                merged.append([a, b])
+        return [(round(a, 2), round(b, 2)) for a, b in merged]
+
+    def _assemble_proxy(self, video: Video, a: float, b: float) -> tuple[Path, dict]:
+        folder = self.source_dir(video.source_url) / "proxy"
+        folder.mkdir(parents=True, exist_ok=True)
+        pieces: list[tuple[Path, float, float]] = []      # (fichier, début, fin) relatifs au fichier
+        cursor, downloaded, reused = a, 0.0, 0.0
+        existing = {f for _, _, f in self._cached(folder, "seg")}   # morceaux présents avant cette demande
+        for _ in range(100):                                # garde-fou
+            if cursor >= b - 0.5:
+                break
+            segs = self._cached(folder, "seg")
+            cover = [x for x in segs if x[0] <= cursor + 0.05 and x[1] > cursor + 0.5]
+            if cover:
+                sa, sb, f = max(cover, key=lambda x: x[1])
+                end = min(sb, b)
+                pieces.append((f, cursor - sa, end - sa))
+                if f in existing:
+                    reused += end - cursor
+                cursor = end
+                continue
+            nxt = min([x[0] for x in segs if x[0] > cursor] + [b])
+            gap_end = min(b, max(nxt, cursor + 2.0))        # au moins 2 s par téléchargement
+            name = f"seg_{cursor:.2f}_{gap_end:.2f}"
+            self._download(video.source_url, folder, video, (cursor, gap_end), quality="proxy", name=name)
+            downloaded += gap_end - cursor
+        else:
+            raise IngestionError("Assemblage de la vidéo impossible (trop de morceaux).")
+        out = self.video_dir(video.id) / "source.mp4"
+        work = self.video_dir(video.id) / "assemble"
+        work.mkdir(exist_ok=True)
+        parts = []
+        for i, (f, s0, s1) in enumerate(pieces):           # découpe précise (ré-encodage léger, 360p)
+            part = work / f"part_{i:03d}.mp4"
+            ffmpeg.run(["ffmpeg", "-y", "-v", "error", "-ss", f"{max(0.0, s0):.3f}", "-i", str(f), "-t", f"{s1 - s0:.3f}",
+                        "-map", "0:v:0", "-map", "0:a:0?", "-c:v", "libx264", "-preset", "veryfast", "-crf", "26",
+                        "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "96k", "-ar", "48000", str(part)])
+            parts.append(part)
+        if len(parts) == 1:
+            parts[0].replace(out)
+        else:
+            listing = work / "list.txt"
+            listing.write_text("".join(f"file '{p.name}'\n" for p in parts))
+            ffmpeg.run(["ffmpeg", "-y", "-v", "error", "-f", "concat", "-safe", "0", "-i", str(listing),
+                        "-c", "copy", "-movflags", "+faststart", str(out)])
+        shutil.rmtree(work, ignore_errors=True)
+        return out, {"downloaded_seconds": round(downloaded, 1), "reused_seconds": round(reused, 1)}
 
     def import_url(self, url: str, rights_confirmed: bool = False, rights_note: str | None = None,
                    title: str | None = None, options: dict | None = None, start=None, end=None) -> tuple[Video, bool]:
@@ -271,26 +359,23 @@ class VideoIngestionService:
     def fetch_hd_segment(self, video: Video, start: float, end: float) -> tuple[Path, float]:
         """Télécharge (ou réutilise) le passage HD couvrant [start, end] (temps de la vidéo importée).
 
-        Retourne (fichier, début du fichier dans la timeline de la vidéo). Une marge de 5 s de chaque côté
-        permet de petits ajustements dans l'éditeur sans retélécharger."""
-        seg_dir = self.video_dir(video.id) / "segments"
-        seg_dir.mkdir(parents=True, exist_ok=True)
-        for f in seg_dir.glob("hd_*.mp4"):          # cache : un passage déjà téléchargé qui couvre le clip
-            try:
-                a, b = (float(x) for x in f.stem[3:].split("_"))
-            except ValueError:
-                continue
-            if a <= start + 0.05 and end - 0.05 <= b:
-                return f, a
-        seg_start = max(0.0, start - self.SEGMENT_PAD)
-        seg_end = min(video.duration or end + self.SEGMENT_PAD, end + self.SEGMENT_PAD)
+        Retourne (fichier, début du fichier dans la timeline de la vidéo). Le cache est partagé entre toutes
+        les plages importées du même lien ; une marge de 5 s permet de petits ajustements sans retélécharger."""
         o = video.options or {}
         origin = float(o.get("section_requested_start", o.get("section_start", 0.0)))
-        name = f"hd_{seg_start:.2f}_{seg_end:.2f}"
-        path = self._download(video.source_url, seg_dir, video, (origin + seg_start, origin + seg_end),
-                              quality="full", name=name)
+        seg_dir = self.source_dir(video.source_url) / "hd"
+        seg_dir.mkdir(parents=True, exist_ok=True)
+        abs_s, abs_e = origin + start, origin + end
+        for a, b, f in self._cached(seg_dir, "hd"):
+            if a <= abs_s + 0.05 and abs_e - 0.05 <= b and f.suffix == ".mp4":
+                return f, a - origin
+        seg_start = max(0.0, abs_s - self.SEGMENT_PAD)
+        limit = float(o.get("source_duration") or 0) or (origin + (video.duration or end) + self.SEGMENT_PAD)
+        seg_end = min(limit, abs_e + self.SEGMENT_PAD)
+        path = self._download(video.source_url, seg_dir, video, (seg_start, seg_end), quality="full",
+                              name=f"hd_{seg_start:.2f}_{seg_end:.2f}")
         if path.suffix != ".mp4":
             final = path.with_suffix(".mp4")
             path.rename(final)
             path = final
-        return path, seg_start
+        return path, seg_start - origin

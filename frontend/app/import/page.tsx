@@ -51,9 +51,18 @@ export default function ImportPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const probeTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const pendingFrom = useRef<number | null>(null);
 
   useEffect(() => {
     api.system().then(setSystem).catch((e) => setError(`Serveur injoignable : ${e.message}`));
+    // « Analyser une autre partie » : lien et point de départ pré-remplis
+    const q = new URLSearchParams(window.location.search);
+    const u = q.get("url");
+    if (u) {
+      setUrl(u);
+      const from = Number(q.get("from"));
+      if (Number.isFinite(from) && from > 0) pendingFrom.current = from;
+    }
   }, []);
 
   // vérifie le lien automatiquement après la saisie / le collage
@@ -70,8 +79,11 @@ export default function ImportPage() {
         if (p.duration) {
           setDuration(p.duration);
           const long = p.duration > MAX_SECONDS;
-          setWhole(!long);
-          setRange({ start: 0, end: Math.min(p.duration, 3600) });
+          setWhole(!long && pendingFrom.current == null);
+          const from = Math.min(pendingFrom.current ?? 0, Math.max(0, p.duration - 60));
+          if (pendingFrom.current != null) setWhole(false);
+          setRange({ start: from, end: Math.min(p.duration, from + 3600) });
+          pendingFrom.current = null;
         }
       } catch (e) {
         setProbeError((e as Error).message);
@@ -204,6 +216,13 @@ export default function ImportPage() {
                 <>
                   <RangeSlider min={0} max={duration} step={Math.max(1, Math.round(duration / 2000))} start={range.start} end={range.end}
                     onChange={(s, e) => setRange({ start: s, end: e })} />
+                  {!!probe?.cached_ranges?.length && (
+                    <div style={{ position: "relative", height: 6, marginTop: -6, borderRadius: 999, background: "transparent" }}>
+                      {probe.cached_ranges.map(([a, b]) => (
+                        <span key={a} title="Déjà téléchargé" style={{ position: "absolute", left: `${(a / duration) * 100}%`, width: `${Math.max(0.6, ((b - a) / duration) * 100)}%`, top: 0, bottom: 0, background: "#19c2ff", borderRadius: 999 }} />
+                      ))}
+                    </div>
+                  )}
                   <div className="row spread tiny muted mono"><span>0:00:00</span><span>{fmtTime(duration)}</span></div>
                 </>
               )}
@@ -218,7 +237,18 @@ export default function ImportPage() {
                 <ChipGroup value={-1} onChange={(len) => setRange((r) => ({ start: r.start, end: Math.min(max, r.start + len) }))}
                   options={[{ value: 600, label: "10 min" }, { value: 1800, label: "30 min" }, { value: 3600, label: "1 h" }, { value: 7200, label: "2 h" }]} />
               </div>
-              <p className="hint">Seul cet extrait est téléchargé et analysé : beaucoup plus rapide sur les longs streams.</p>
+              {!!probe?.cached_ranges?.length && (
+                <div>
+                  <span className="label">♻️ Déjà téléchargé (réutilisé sans retélécharger)</span>
+                  <div className="chips">
+                    {probe.cached_ranges.map(([a, b]) => (
+                      <button key={a} type="button" className="chip" style={{ borderColor: "#19c2ff", color: "#9fe3ff" }}
+                        onClick={() => setRange({ start: a, end: b })}>{fmtTime(a)} → {fmtTime(b)}</button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <p className="hint">Seule la partie jamais téléchargée est récupérée ; ce qui est déjà sur le serveur est réutilisé.</p>
             </div>
           )}
           {tooLong && !whole && <Alert kind="warn">Extrait trop long (4 h maximum).</Alert>}
@@ -282,7 +312,7 @@ export default function ImportPage() {
             <input type="checkbox" checked={rights} onChange={(e) => setRights(e.target.checked)} />
             <span className="small">J&apos;ai le droit d&apos;utiliser cette vidéo : c&apos;est mon contenu, elle est sous licence, ou j&apos;ai l&apos;accord du créateur.</span>
           </label>
-          <div className="action-bar">
+          <div className="action-bar static">
             <button className="btn btn-primary btn-lg btn-block" disabled={busy || !rights || tooLong} onClick={submit}>
               {busy ? <><Spinner /> Envoi…</> : "✨ Trouver les meilleurs moments"}
             </button>

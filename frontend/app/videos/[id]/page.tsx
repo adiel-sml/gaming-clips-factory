@@ -108,6 +108,11 @@ export default function VideoPage() {
               {v.game && <span className="tag">🎮 {v.game.toUpperCase()}</span>}
               {v.language && <span className="tag">🗣 {v.language.toUpperCase()}</span>}
               {v.options?.remote_hd ? <span className="tag" title="Analyse sur une version légère, clips rendus en HD">⚡ HD au rendu</span> : null}
+              {v.stats?.download && v.stats.download.reused_seconds > 0 ? (
+                <span className="tag" title="Déjà téléchargé pour ce lien : rien à retélécharger">
+                  ♻️ {fmtTime(v.stats.download.reused_seconds)} réutilisés
+                </span>
+              ) : null}
             </div>
           </div>
         </div>
@@ -136,6 +141,11 @@ export default function VideoPage() {
             <button className="btn btn-primary" disabled={!!busy.compilation} onClick={compilation}>
               {busy.compilation ? <><Spinner /> {busy.compilation}</> : "🎬 Compilation top 5"}
             </button>
+          )}
+          {v.source_url && (
+            <Link className="btn btn-sm" href={`/import?url=${encodeURIComponent(v.source_url)}&from=${Math.round(Number(v.options?.section_end ?? 0))}`}>
+              ➕ Analyser une autre partie
+            </Link>
           )}
           <button className="btn btn-ghost btn-sm" disabled={!!busy.re || active} onClick={reanalyze}>↻ Ré-analyser</button>
         </div>

@@ -66,7 +66,8 @@ def test_url_section_only_downloads_the_range(fresh_db, synthetic_video, monkeyp
 
     def fake_download(self, url, out_dir, video, section=None, **kw):
         calls["section"] = section
-        dst = out_dir / "source.mp4"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        dst = out_dir / f"{kw.get('name', 'source')}.mp4"
         shutil.copy(synthetic_video, dst)
         return dst
 
@@ -134,7 +135,8 @@ def test_api_url_import_is_async(fresh_db, synthetic_video, monkeypatch, pipelin
 
     def slow_download(self, url, out_dir, video, section=None, **kw):
         assert section == (16200, 19800)
-        dst = out_dir / "source.mp4"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        dst = out_dir / f"{kw.get('name', 'source')}.mp4"
         shutil.copy(synthetic_video, dst)
         return dst
 

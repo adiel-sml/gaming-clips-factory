@@ -47,7 +47,7 @@ def test_proxy_analysis_and_hd_clips(fresh_db, remote, pipeline_factory):
         ing = VideoIngestionService(db)
         video, _ = ing.prepare_url("https://www.twitch.tv/videos/1", rights_confirmed=True)
         ing.download_url(video)
-        assert remote[0][0] == "proxy" and remote[0][2] is None
+        assert remote[0][0] == "proxy" and remote[0][2] == (0.0, 40.0)   # toute la vidéo, mise en mémoire
         assert (video.width, video.height) == (640, 360) and video.options["remote_hd"]
 
         pipe = pipeline_factory(db)
@@ -105,3 +105,42 @@ def test_full_mode_still_available(fresh_db, remote):
         video, _ = ing.prepare_url("https://www.twitch.tv/videos/3", rights_confirmed=True)
         ing.download_url(video)
         assert remote[-1][0] == "full" and not video.options.get("remote_hd")
+
+
+def test_same_link_reuses_downloaded_ranges(fresh_db, synthetic_video, monkeypatch):
+    """6:00-7:00 puis 6:30-7:30 : seule la demi-heure manquante est téléchargée ; puis 6:15-6:45 : rien."""
+    from app.core.db import get_engine
+
+    calls = []
+    monkeypatch.setattr(VideoIngestionService, "_probe_url", lambda self, url: {"duration": 36000, "title": "VOD"})
+
+    def fake(self, url, out_dir, video, section=None, quality="full", name="source"):
+        calls.append((quality, section))
+        out_dir.mkdir(parents=True, exist_ok=True)
+        dst = out_dir / f"{name}.mp4"
+        dur = min(40.0, section[1] - section[0])   # on simule le passage avec la vidéo synthétique (40 s max)
+        subprocess.run(["ffmpeg", "-y", "-v", "error", "-stream_loop", "-1", "-i", str(synthetic_video), "-t", str(dur),
+                        "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac", str(dst)], check=True)
+        return dst
+
+    monkeypatch.setattr(VideoIngestionService, "_download", fake)
+    url = "https://www.twitch.tv/videos/77"
+    with Session(get_engine(), expire_on_commit=False) as db:
+        ing = VideoIngestionService(db)
+        v1, _ = ing.prepare_url(url, rights_confirmed=True, start="6:00:00", end="6:00:30")
+        ing.download_url(v1)
+        assert calls == [("proxy", (21600.0, 21630.0))]
+        v2, _ = ing.prepare_url(url, rights_confirmed=True, start="6:00:15", end="6:00:45")
+        ing.download_url(v2)
+        assert calls[1] == ("proxy", (21630.0, 21645.0)), calls        # seulement le morceau manquant
+        assert v2.stats["download"] == {"downloaded_seconds": 15.0, "reused_seconds": 15.0}
+        assert abs(ffmpeg.probe(v2.file_path).duration - 30) < 0.5
+        v3, _ = ing.prepare_url(url, rights_confirmed=True, start="6:00:05", end="6:00:40")
+        ing.download_url(v3)
+        assert len(calls) == 2 and v3.stats["download"]["downloaded_seconds"] == 0   # tout était déjà là
+        assert ing.cached_ranges(url) == [(21600.0, 21645.0)]
+        # passages HD partagés entre les plages du même lien
+        p1, off1 = ing.fetch_hd_segment(v2, 18, 25)         # absolu 21633-21640
+        p2, off2 = ing.fetch_hd_segment(v1, 33, 40)          # même passage vu depuis la première plage
+        assert p1 == p2 and len([c for c in calls if c[0] == "full"]) == 1
+        assert abs((off1 + 21615) - (off2 + 21600)) < 0.01

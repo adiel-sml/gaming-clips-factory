@@ -226,9 +226,10 @@ def probe_source(body: ProbeRequest, db: Session = Depends(get_session)):
     except IngestionError as exc:
         raise HTTPException(400, str(exc)) from exc
     platform = next((p for p in ("youtube", "twitch", "vimeo", "kick") if p in host), host)
+    ing = VideoIngestionService(db)
     return {"title": info.get("title"), "duration": info.get("duration"), "thumbnail": info.get("thumbnail"),
             "uploader": info.get("uploader") or info.get("channel"), "platform": platform,
-            "is_live": bool(info.get("is_live"))}
+            "is_live": bool(info.get("is_live")), "cached_ranges": ing.cached_ranges(url)}
 
 
 @app.post("/videos", status_code=201, tags=["vidéos"])

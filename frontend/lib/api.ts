@@ -22,6 +22,7 @@ export type Video = {
     candidates?: number;
     progress?: { step: string; pct: number | null };
     picker?: "llm" | "rules";
+    download?: { downloaded_seconds: number; reused_seconds: number };
   };
   highlight_count?: number;
   clip_count?: number;
@@ -102,6 +103,7 @@ export type Probe = {
   uploader: string | null;
   platform: string;
   is_live: boolean;
+  cached_ranges?: [number, number][];
 };
 
 export type SystemInfo = {
