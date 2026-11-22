@@ -22,6 +22,7 @@ from app.core.utils import fmt_ts, setup_logging, utcnow
 from app.models.entities import Clip, ClipStatus, Highlight, Job, Video
 from app.services.ingestion import IngestionError, VideoIngestionService
 from app.services.pipeline import PipelineService
+from app.services import retention
 from app.workers.queue import EmbeddedWorker, JobQueue
 
 
@@ -101,7 +102,20 @@ def video_out(v: Video, db: Session | None = None) -> dict:
         d["clip_count"] = db.exec(select(func.count()).select_from(Clip).where(Clip.video_id == v.id)).one()
         job = db.exec(select(Job).where(Job.target_id == v.id).order_by(Job.created_at.desc())).first()
         d["last_job"] = {"id": job.id, "type": job.type, "status": job.status, "error": (job.error or "")[:300]} if job else None
+        d["expires_at"] = retention.expires_at(db, v)
     return d
+
+
+def _expiry_lookup(db: Session):
+    """Date de suppression automatique par vidéo (calculée une fois par vidéo et par requête)."""
+    cache: dict[str, object] = {}
+
+    def get(video_id: str):
+        if video_id not in cache:
+            v = db.get(Video, video_id)
+            cache[video_id] = retention.expires_at(db, v) if v else None
+        return cache[video_id]
+    return get
 
 
 def highlight_out(h: Highlight, db: Session | None = None, offset: float | None = None) -> dict:
@@ -167,6 +181,7 @@ def system():
             "games": {k: v.get("name", k) for k, v in s.games().items()},
             "profiles": {k: v.get("label", k) for k, v in s.profiles().items()},
             "llm_picker": bool(os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")),
+            "retention": {"enabled": bool(s.get("retention.enabled", True)), "hours": s.get("retention.hours", 48)},
             "defaults": {"min_clip_duration": s.get("video.min_clip_duration"),
                          "max_clip_duration": s.get("video.max_clip_duration"),
                          "clips_per_video": s.get("video.clips_per_video"),
@@ -401,8 +416,9 @@ def list_clips(status: Optional[str] = None, video_id: Optional[str] = None,
     if video_id:
         q = q.where(Clip.video_id == video_id)
     clips = db.exec(q).all()
+    expiry = _expiry_lookup(db)
     if not group:
-        return [clip_out(c) for c in clips]
+        return [{**clip_out(c), "expires_at": expiry(c.video_id)} for c in clips]
     rank = {"main": 0, "compilation": 0, "alt": 1}
     by_key: dict[str, list[Clip]] = {}
     for c in clips:   # la compilation est un clip à part entière ; les variantes d'un moment sont regroupées
@@ -412,6 +428,7 @@ def list_clips(status: Optional[str] = None, video_id: Optional[str] = None,
     for group_clips in by_key.values():
         best = sorted(group_clips, key=lambda c: rank.get(c.variant, 2))[0]
         d = clip_out(best)
+        d["expires_at"] = expiry(best.video_id)
         d["other_variants"] = [c.id for c in group_clips if c.id != best.id]
         out.append(d)
     out.sort(key=lambda d: d["created_at"], reverse=True)
@@ -436,6 +453,7 @@ def delete_clip(clip_id: str, db: Session = Depends(get_session)):
 def get_clip(clip_id: str, db: Session = Depends(get_session)):
     c = get_or_404(db, Clip, clip_id)
     d = clip_out(c)
+    d["expires_at"] = _expiry_lookup(db)(c.video_id)
     h = db.get(Highlight, c.highlight_id)
     d["highlight"] = highlight_out(h) if h else None
     return d

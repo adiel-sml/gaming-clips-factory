@@ -215,6 +215,7 @@ textarea.input { min-height: 90px; resize: vertical; }
 .pill-analyzing::before, .pill-rendering::before, .pill-running::before, .pill-downloading::before { animation: pulse 1.2s infinite; }
 @keyframes pulse { 50% { opacity: 0.25; } }
 .tag { display: inline-flex; align-items: center; gap: 6px; font-size: 0.78rem; padding: 4px 10px; border-radius: 999px; background: var(--panel-2); border: 1px solid var(--border); color: var(--text-2); font-weight: 600; white-space: nowrap; }
+.tag-warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
 .meta-row { display: flex; gap: 6px; flex-wrap: wrap; }
 
 .score-ring { --v: 0; --c: var(--cool); width: 56px; height: 56px; flex: none; border-radius: 50%; display: grid; place-items: center; background: conic-gradient(var(--c) calc(var(--v) * 1%), var(--panel-3) 0); }

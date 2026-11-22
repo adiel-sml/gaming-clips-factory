@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { useCallback, useState } from "react";
 import { Segmented } from "@/components/controls";
-import { Alert, Empty, StatusPill } from "@/components/ui";
+import { Alert, Empty, ExpiryTag, StatusPill } from "@/components/ui";
 import { usePoll } from "@/hooks/usePoll";
 import { api, Clip, fileUrl } from "@/lib/api";
 
@@ -59,7 +59,7 @@ export default function ClipsPage() {
               <div className="row-nowrap spread">
                 <span className="small clamp-1 grow">{c.title ?? c.hook?.text ?? "Clip"}</span>
               </div>
-              <StatusPill status={c.status} />
+              <div className="row-nowrap spread"><StatusPill status={c.status} /><ExpiryTag at={c.expires_at} compact /></div>
             </Link>
           ))}
         </div>

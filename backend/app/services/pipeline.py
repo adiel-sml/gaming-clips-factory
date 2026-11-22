@@ -360,7 +360,8 @@ class PipelineService:
                 peak_out = 1.0
             else:
                 result = self._render_piece(video, s, clip.start, clip.end, clip.layout, clip.crop, clip.subtitle_style,
-                                            hook, out_dir, "clip", analysis, transcript, step, trim=True)
+                                            hook, out_dir, "clip", analysis, transcript, step, trim=True,
+                                            peak=hl.peak)
                 peak_out = result["map"](max(0.0, hl.peak - clip.start))
             mp4 = out_dir / "clip.mp4"
             if result["mp4"] != mp4:
@@ -438,7 +439,8 @@ class PipelineService:
 
     def _render_piece(self, video: Video, s: Settings, start: float, end: float, layout: str | None, crop: dict | None,
                       style: str | None, hook: dict, out_dir: Path, name: str, analysis: AnalysisResult,
-                      transcript: Transcript, step, trim: bool = True) -> dict:
+                      transcript: Transcript, step, trim: bool = True, peak: float | None = None,
+                      progress_bar: bool = True) -> dict:
         src, offset, hd_source = Path(video.file_path), 0.0, "file"
         if (video.options or {}).get("remote_hd"):
             src, offset, hd_source = self._hd_source(video, start, end, s, step, name)
@@ -475,7 +477,9 @@ class PipelineService:
         mp4 = out_dir / f"{name}.mp4"
         render_s = RenderService(s).render(src, start - offset, end - offset, plan, mp4,
                                            ass_path if (sub_enabled or hook.get("text")) else None,
-                                           src_info.has_audio, src_info.fps, keep=keep if cuts else None)
+                                           src_info.has_audio, src_info.fps, keep=keep if cuts else None,
+                                           peak=tmap(peak - start) if peak is not None and start <= peak < end else None,
+                                           progress_bar=progress_bar)
         return {"mp4": mp4, "plan": plan.to_dict(), "events": subs.events, "srt": subs.srt, "preset": subs.preset,
                 "words": len(rel_words), "duration": duration, "render_s": render_s, "map": tmap}
 
@@ -487,7 +491,8 @@ class PipelineService:
         for i, (a, b) in enumerate(segments):
             r = self._render_piece(video, s, a, b, clip.layout, clip.crop, clip.subtitle_style,
                                    hook if i == 0 else {}, out_dir, f"piece_{i:02d}", analysis, transcript,
-                                   lambda label, i=i: step(f"Compilation {i + 1}/{len(segments)} : {label}"), trim=False)
+                                   lambda label, i=i: step(f"Compilation {i + 1}/{len(segments)} : {label}"), trim=False,
+                                   peak=a + 0.4 * (b - a), progress_bar=False)
             pieces.append(r)
             events += [SubEvent(e.start + total, e.end + total, e.text, e.width_est, e.words) for e in r["events"]]
             srt_parts.append(r["srt"])

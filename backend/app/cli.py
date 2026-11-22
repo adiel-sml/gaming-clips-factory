@@ -272,6 +272,20 @@ def status():
 
 
 @app.command()
+def purge(dry_run: bool = typer.Option(False, "--dry-run", help="Afficher ce qui serait supprimé, sans rien effacer"),
+          hours: Optional[float] = typer.Option(None, help="Délai d'inactivité (défaut : retention.hours, 48 h)")):
+    """Libère le disque : supprime vidéos, extraits et clips inactifs depuis 48 h (fait aussi toutes les heures
+    automatiquement par le worker)."""
+    from app.services.retention import purge as do_purge
+
+    s = get_settings()
+    if hours is not None:
+        s["retention"] = {**dict(s.get("retention", {}) or {}), "hours": hours, "enabled": True}
+    with session_scope() as db:
+        _out(do_purge(db, s, dry_run=dry_run).to_dict())
+
+
+@app.command()
 def worker(once: bool = typer.Option(False, help="Vider la file puis s'arrêter")):
     """Traite la file d'attente (tâches de l'API ou de `clips batch`)."""
     from app.workers.queue import JobQueue

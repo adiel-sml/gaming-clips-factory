@@ -4,7 +4,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { ChoiceCards, RangeSlider, Segmented, TimeField, fmtTime } from "@/components/controls";
 import { useToast } from "@/components/Toast";
-import { Alert, CategoryTag, ScoreRing, Spinner, StatusPill } from "@/components/ui";
+import { Alert, CategoryTag, ExpiryTag, ScoreRing, Spinner, StatusPill } from "@/components/ui";
 import { usePoll, waitForJob } from "@/hooks/usePoll";
 import { api, Clip, downloadUrl, fileUrl, getToken, SystemInfo, Video } from "@/lib/api";
 
@@ -198,6 +198,7 @@ export default function ClipEditor() {
             {h && <CategoryTag category={h.category} />}
             <span className="tag mono">⏱ {c.duration.toFixed(1)} s</span>
             {isCompilation && <span className="tag">🎬 Compilation</span>}
+            <ExpiryTag at={c.expires_at} />
             {!!crop?.dead_air_removed && <span className="tag">✂️ {crop.dead_air_removed} s de blancs coupés</span>}
           </div>
           {!!c.qc?.reasons?.length && <Alert kind="warn">{c.qc.reasons.join(" · ")}</Alert>}

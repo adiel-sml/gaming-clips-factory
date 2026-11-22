@@ -116,3 +116,40 @@ def test_render_command_avoids_removed_ffmpeg_options(tmp_path, settings, monkey
     monkeypatch.setattr(render_mod, "MAX_INLINE_GRAPH", 10)
     RenderService(settings).render(tmp_path / "in.mp4", 0, 5, plan, tmp_path / "out2.mp4", None, True, 30)
     assert "-/filter_complex" in seen[1] and "-filter_complex_script" not in seen[1]
+
+
+def _gray_frame(path, t):
+    out = subprocess.run(["ffmpeg", "-v", "error", "-ss", str(t), "-i", str(path), "-frames:v", "1", "-f", "rawvideo",
+                          "-pix_fmt", "gray", "-"], capture_output=True, check=True).stdout
+    import numpy as np
+    return np.frombuffer(out, np.uint8).reshape(1920, 1080).astype(int)
+
+
+def test_punch_effects_and_progress_bar(synthetic_video, tmp_path, settings, monkeypatch):
+    """Zoom + flash au moment fort, barre de progression qui avance ; image intacte hors du pic."""
+    comp = VideoCompositionService(settings, face_detector=NoFaceDetector())
+    plan = comp.plan(synthetic_video, 1280, 720, 10, 16, layout="gameplay")
+    plain, fx = tmp_path / "plain.mp4", tmp_path / "fx.mp4"
+    monkeypatch.setitem(settings, "effects", {"enabled": False})
+    RenderService(settings).render(synthetic_video, 10, 16, plan, plain, None, True, 30)
+    monkeypatch.setitem(settings, "effects", {"enabled": True, "punch_zoom": 1.2, "punch_duration": 1.0, "shake": True,
+                                              "flash": True, "progress_bar": True, "bar_height": 12})
+    RenderService(settings).render(synthetic_video, 10, 16, plan, fx, None, True, 30, peak=3.0)
+    assert (ffmpeg.probe(fx).width, ffmpeg.probe(fx).height) == (1080, 1920)
+    a, b = _gray_frame(plain, 1.5), _gray_frame(fx, 1.5)
+    assert abs(a[100:] - b[100:]).mean() < 3, "hors du pic, l'image ne doit pas changer"
+    a, b = _gray_frame(plain, 3.5), _gray_frame(fx, 3.5)
+    assert abs(a[100:] - b[100:]).mean() > 5, "au pic, le zoom doit modifier l'image"
+    bar_early = (_gray_frame(fx, 1.0)[4] > 150).sum()
+    bar_late = (_gray_frame(fx, 5.0)[4] > 150).sum()
+    assert bar_late > bar_early + 300, (bar_early, bar_late)
+
+
+def test_effects_disabled_produce_no_filters():
+    from app.services.render import effects_chain
+
+    assert effects_chain(2.0, 10, {"enabled": False}) == ("", "")
+    pre, post = effects_chain(None, 10, {"enabled": True})
+    assert pre == "" and "overlay" in post
+    pre, _ = effects_chain(9.9, 10, {"enabled": True})
+    assert pre == "", "pic trop proche de la fin : pas d'effet coupé net"

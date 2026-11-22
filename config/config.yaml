@@ -76,7 +76,7 @@ composition:
   layout: auto            # auto | gameplay | streamer | split | webcam_overlay | tracking | blur_fit
   gameplay_mode: saliency # saliency | center | blur_fit
   webcam_region: null     # [x, y, w, h] normalisé 0-1 pour forcer la zone webcam
-  face_detector: haar     # haar | none
+  face_detector: yunet    # yunet (réseau de neurones, fiable sur les petites webcams) | haar | none
   split_top_ratio: 0.36   # part de la hauteur pour la webcam en split screen
   tracking_smoothing: 0.85
 
@@ -85,6 +85,17 @@ clips:
   min_pause: 0.7
   pause_padding: 0.15
   quiet_margin_db: 8      # une pause n'est coupée que si le son y est 8 dB sous la médiane du clip
+
+effects:                  # effets « punchy » (coût : ~10 % de temps de rendu en plus)
+  enabled: true
+  punch_zoom: 1.15        # zoom avant sur le moment fort (1 = désactivé)
+  punch_duration: 0.9     # secondes
+  shake: true             # léger tremblement au moment de l'impact
+  shake_px: 12
+  flash: true             # flash blanc très bref
+  progress_bar: true      # barre de progression en haut : incite à regarder jusqu'au bout
+  bar_color: "0xFFD400"
+  bar_height: 10
 
 subtitles:
   enabled: true
@@ -119,6 +130,11 @@ llm:
   model: claude-opus-5-5
   effort: low
   timeout: 60
+
+retention:                # purge automatique pour libérer le disque du serveur
+  enabled: true
+  hours: 48               # vidéo + extraits + clips supprimés 48 h après la dernière activité
+  check_every_minutes: 60
 
 queue:
   embedded_worker: true   # l'API traite elle-même la file (MVP) ; sinon lancer `clips worker`

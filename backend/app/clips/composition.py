@@ -16,7 +16,7 @@ from pathlib import Path
 
 import numpy as np
 
-from app.clips.tracking import Box, FaceTrack, build_face_detector, smooth_path, track_faces
+from app.clips.tracking import Box, FaceTrack, build_face_detector, detect_webcam_box, smooth_path, track_faces
 from app.core.config import Settings, get_settings
 from app.video.analysis import AnalysisResult
 
@@ -80,12 +80,19 @@ class VideoCompositionService:
 
         if layout == "auto":
             layout, webcam = self._auto_layout(track, webcam)
+        webcam_source = "config" if webcam is not None else None
+        if layout in ("split", "streamer", "webcam_overlay") and webcam is None and track and track.hit_ratio >= 0.3:
+            # cadre réel de la webcam (zone immobile autour du visage) plutôt qu'une estimation
+            med = track.median_box()
+            webcam = detect_webcam_box(video, start - time_offset, end - time_offset, med) if med else None
+            webcam_source = "detected" if webcam else None
         if layout in ("split", "streamer", "webcam_overlay") and webcam is None:
             webcam = self._webcam_from_track(track)
+            webcam_source = "estimated" if webcam else None
             if webcam is None:  # pas de webcam détectée -> gameplay
                 layout = "gameplay"
 
-        details = {"face_hit_ratio": round(track.hit_ratio, 2) if track else None}
+        details = {"face_hit_ratio": round(track.hit_ratio, 2) if track else None, "webcam_source": webcam_source}
         manual_x = crop_override.get("x")  # centre horizontal manuel (0-1)
         if layout == "blur_fit":
             plan = self._blur_fit(src_w, src_h)
@@ -108,7 +115,7 @@ class VideoCompositionService:
         if track and track.hit_ratio >= 0.4:
             med = track.median_box()
             if med and med.area < 0.04 and track.center_std() < 0.12:
-                return "split", self._webcam_from_track(track)   # facecam incrustée dans un stream
+                return "split", None                              # facecam incrustée : cadre affiné ensuite
             if med and med.area >= 0.04:
                 return "tracking", None                           # streamer plein cadre / IRL
         return "gameplay", None

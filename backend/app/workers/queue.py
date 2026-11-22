@@ -147,8 +147,13 @@ class JobQueue:
             if n:
                 log.info("%d tâche(s) interrompue(s) remise(s) en file", n)
         interval = float(self.s.get("queue.poll_interval", 2))
+        from app.services.retention import PurgeScheduler
+
+        purger = PurgeScheduler(self.s)
         while not stop.is_set():
             with Session(get_engine(), expire_on_commit=False) as session:
+                if not once:
+                    purger.maybe_run(session)       # purge 48 h, au plus une fois par heure
                 job = self.claim(session)
                 if job:
                     log.info("→ %s %s (%s)", job.type, job.target_id, job.id)

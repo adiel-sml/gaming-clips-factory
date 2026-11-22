@@ -4,7 +4,7 @@ import { useParams } from "next/navigation";
 import { useCallback, useRef, useState } from "react";
 import { fmtTime } from "@/components/controls";
 import { useToast } from "@/components/Toast";
-import { Alert, CategoryTag, Empty, ScoreRing, Spinner, StatusPill } from "@/components/ui";
+import { Alert, CategoryTag, Empty, ExpiryTag, ScoreRing, Spinner, StatusPill } from "@/components/ui";
 import { usePoll, waitForJob } from "@/hooks/usePoll";
 import { api, fileUrl, Highlight, Video } from "@/lib/api";
 
@@ -104,6 +104,7 @@ export default function VideoPage() {
             <h1 style={{ fontSize: "1.3rem" }} className="clamp-2">{v.title ?? v.id}</h1>
             <div className="meta-row">
               <StatusPill status={v.status} />
+              <ExpiryTag at={v.expires_at} />
               {v.duration ? <span className="tag mono">⏱ {fmtTime(v.duration)}</span> : null}
               {v.game && <span className="tag">🎮 {v.game.toUpperCase()}</span>}
               {v.language && <span className="tag">🗣 {v.language.toUpperCase()}</span>}

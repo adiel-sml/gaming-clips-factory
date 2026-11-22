@@ -78,3 +78,18 @@ export function Empty({ emoji, title, children }: { emoji: string; title: string
 export function Spinner() {
   return <span className="spinner" aria-hidden />;
 }
+
+/** Compte à rebours avant la purge automatique du serveur (48 h sans activité). */
+export function ExpiryTag({ at, compact }: { at?: string | null; compact?: boolean }) {
+  if (!at) return null;
+  const hours = (new Date(at).getTime() - Date.now()) / 3_600_000;
+  if (!isFinite(hours)) return null;
+  const label = hours <= 1 ? "< 1 h" : hours < 24 ? `${Math.floor(hours)} h` : `${Math.floor(hours / 24)} j ${Math.floor(hours % 24)} h`;
+  const urgent = hours < 12;
+  return (
+    <span className={`tag mono${urgent ? " tag-warn" : ""}`}
+      title="Supprimé automatiquement du serveur 48 h après la dernière activité. Enregistrez la vidéo sur votre téléphone pour la garder.">
+      🗑 {compact ? label : `supprimé dans ${label}`}
+    </span>
+  );
+}

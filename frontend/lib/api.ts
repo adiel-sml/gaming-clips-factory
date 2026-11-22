@@ -27,6 +27,7 @@ export type Video = {
   highlight_count?: number;
   clip_count?: number;
   last_job?: Job | null;
+  expires_at?: string | null;
   created_at: string;
 };
 
@@ -54,6 +55,7 @@ export type Clip = {
   render_seconds: number;
   highlight?: Highlight | null;
   other_variants?: string[];
+  expires_at?: string | null;
 };
 
 export type Highlight = {
