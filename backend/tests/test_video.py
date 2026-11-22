@@ -98,3 +98,21 @@ def test_quality_control_rejects_corrupt_file(tmp_path, settings):
     junk.write_bytes(b"not a video" * 100)
     report = QualityControlService(settings).check(junk)
     assert not report.passed and "illisible" in report.reasons[0]
+
+
+def test_render_command_avoids_removed_ffmpeg_options(tmp_path, settings, monkeypatch):
+    """-filter_complex_script a été supprimée dans FFmpeg 9 : le graphe doit passer par -filter_complex."""
+    from app.clips.composition import CompositionPlan
+    from app.services import render as render_mod
+
+    seen = []
+    monkeypatch.setattr(render_mod.ffmpeg, "run", lambda cmd, timeout=None: seen.append(cmd))
+    plan = CompositionPlan("gameplay", "[0:v]scale=1080:1920[vcomp]", subtitle_y=0.7)
+    RenderService(settings).render(tmp_path / "in.mp4", 0, 5, plan, tmp_path / "out.mp4", None, True, 30)
+    cmd = seen[0]
+    assert "-filter_complex_script" not in cmd and "-filter_script" not in cmd and "-vsync" not in cmd
+    assert cmd[cmd.index("-filter_complex") + 1].startswith("[0:v]scale=1080:1920[vcomp]")
+    # graphe géant : syntaxe moderne « -/filter_complex fichier »
+    monkeypatch.setattr(render_mod, "MAX_INLINE_GRAPH", 10)
+    RenderService(settings).render(tmp_path / "in.mp4", 0, 5, plan, tmp_path / "out2.mp4", None, True, 30)
+    assert "-/filter_complex" in seen[1] and "-filter_complex_script" not in seen[1]

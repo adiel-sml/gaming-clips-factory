@@ -12,6 +12,8 @@ from app.video import ffmpeg
 
 log = get_logger("render")
 
+MAX_INLINE_GRAPH = 100_000   # caractères (limite d'un argument de commande sous Linux : 128 Kio)
+
 
 def _escape_filter_path(p: Path) -> str:
     return str(p).replace("\\", "/").replace(":", r"\:").replace("'", r"\'")
@@ -50,14 +52,22 @@ class RenderService:
             if self.s.get("output.loudnorm", True):
                 af = "loudnorm=I=-14:TP=-1.5:LRA=11," + af
             graph += f";[0:a]{cut}{af}[aout]"
-        script = out_path.with_suffix(".filter.txt")
-        script.write_text(graph)
+        # Graphe passé directement dans la commande : `-filter_complex` (forme non dépréciée, toutes versions).
+        # L'ancienne option `-filter_complex_script` a été supprimée dans FFmpeg 9. Pour un graphe énorme
+        # (au-delà de la limite d'un argument sous Linux), on utilise `-/filter_complex fichier` (FFmpeg ≥ 7.1).
+        script: Path | None = None
+        if len(graph) <= MAX_INLINE_GRAPH:
+            filter_args = ["-filter_complex", graph]
+        else:
+            script = out_path.with_suffix(".filter.txt")
+            script.write_text(graph)
+            filter_args = ["-/filter_complex", str(script)]
 
         duration = max(0.1, end - start)
         cmd = ["ffmpeg", "-y", "-v", "error", "-ss", f"{start:.3f}", "-t", f"{duration:.3f}", "-i", str(src)]
         if not has_audio:
             cmd += ["-f", "lavfi", "-t", f"{duration:.3f}", "-i", "anullsrc=r=48000:cl=stereo"]
-        cmd += ["-filter_complex_script", str(script), "-map", "[vout]"]
+        cmd += [*filter_args, "-map", "[vout]"]
         cmd += ["-map", "[aout]"] if has_audio else ["-map", "1:a"]
         encoder = pick_video_encoder(self.s.get("output.video_codec", "auto"))
         if encoder == "h264_nvenc":
@@ -69,7 +79,8 @@ class RenderService:
                 "-ar", "48000", "-ac", "2", "-movflags", "+faststart", "-shortest", str(out_path)]
         t0 = time.time()
         ffmpeg.run(cmd)
-        script.unlink(missing_ok=True)
+        if script is not None:
+            script.unlink(missing_ok=True)
         elapsed = time.time() - t0
         log.info("Rendu %s (%.1fs de clip) en %.1fs", out_path.name, duration, elapsed)
         return elapsed

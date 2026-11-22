@@ -61,8 +61,9 @@ partir des preuves, et une confiance qui dépend de l'accord entre modalités (a
 Un seul appel FFmpeg par clip : `-ss/-t` (découpe), filtergraph de composition (crop dont la
 position est une expression linéaire par morceaux de `t`, pour un suivi fluide sans ré-encodage
 intermédiaire), `ass` (sous-titres et hook), `fps`, `loudnorm` (−14 LUFS), puis libx264 ou NVENC,
-AAC 48 kHz et `+faststart`. Le script de filtres est écrit dans un fichier, ce qui évite les
-problèmes d'échappement shell.
+AAC 48 kHz et `+faststart`. Le graphe est passé directement à `-filter_complex` (sans shell, donc sans souci d'échappement). L'option
+`-filter_complex_script`, supprimée dans FFmpeg 9, n'est pas utilisée ; un graphe géant passe par
+`-/filter_complex fichier`.
 
 ## Modèle de données
 
